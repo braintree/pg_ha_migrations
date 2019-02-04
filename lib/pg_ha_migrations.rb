@@ -26,6 +26,7 @@ require "pg_ha_migrations/blocking_database_transactions_reporter"
 require "pg_ha_migrations/unsafe_statements"
 require "pg_ha_migrations/safe_statements"
 require "pg_ha_migrations/allowed_versions"
+require "pg_ha_migrations/migration_modifier"
 require "pg_ha_migrations/railtie"
 
 PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migrations_class|
