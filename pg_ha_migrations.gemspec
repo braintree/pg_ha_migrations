@@ -28,6 +28,6 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "db-query-matchers", "~> 0.9.0"
 
 
-  spec.add_dependency "rails", ">= 5.0", "< 5.2"
+  spec.add_dependency "rails", ">= 5.0", "< 5.3"
   spec.add_dependency "relation_to_struct"
 end
