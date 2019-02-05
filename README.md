@@ -52,6 +52,8 @@ Migrations prefixed with `unsafe_` will warn when invoked. The API is designed t
 
 Migrations prefixed with `safe_` prefer concurrent operations where available, set low lock timeouts where appropriate, and decompose operations into multiple safe steps.
 
+Default behavior of this gem [disables ddl transactions](./lib/pg_ha_migrations.rb:8). You can change this by resetting `ActiveRecord::Migration.disable_ddl_transactions` in your application.
+
 The following functionality is currently unsupported:
 
 - Rollbacks
@@ -130,7 +132,7 @@ unsafe_make_column_not_nullable :table, :column
 
 #### safe\_add\_concurrent\_index
 
-Add an index concurrently. Migrations that contain this statement must also include `disable_ddl_transaction!`.
+Add an index concurrently.
 
 ```ruby
 safe_add_concurrent_index :table, :column

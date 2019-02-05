@@ -5,6 +5,7 @@ require "active_record/migration"
 require "relation_to_struct"
 
 module PgHaMigrations
+  ActiveRecord::Migration.disable_ddl_transaction = true
   LOCK_TIMEOUT_SECONDS = 5
   LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER = 5
 
