@@ -23,7 +23,7 @@ module PgHaMigrations
           file_contents.gsub!(/ change_column_null (.*), false$/, ' unsafe_make_column_not_nullable \1')
           file_contents.gsub!(/ change_column_null (.*), true$/, ' safe_make_column_nullable \1')
           file_contents.gsub!(/ change_column_default /, ' safe_change_column_default ')
-          file_contents.gsub!(/ execute( |\()"/, ' unsafe_execute\1"')
+          file_contents.gsub!(/ execute(( |\()("|\'|<))/, ' unsafe_execute\1')
           file.write(file_contents)
         end
       end
