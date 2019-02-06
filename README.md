@@ -146,7 +146,7 @@ safe_add_concurrent_index :table, [:column1, :column2], name: "index_name", usin
 
 #### safe\_remove\_concurrent\_index
 
-Safely remove an index. Migrations that contain this statement must also include `disable_ddl_transaction!`.
+Safely remove an index.
 
 ```ruby
 safe_remove_concurrent_index :table, :name => :index_name

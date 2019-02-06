@@ -14,6 +14,7 @@ module PgHaMigrations
         File.open(file_path, 'w') do |file|
           file_contents.gsub!(/ create_table /, ' safe_create_table ')
           file_contents.gsub!(/ add_column /, ' safe_add_column ')
+          file_contents.gsub!(/ safe_add_column(.*null: false.*$)/, ' unsafe_add_column\1')
           file_contents.gsub!(/ (add|remove)_index /, ' safe_\1_concurrent_index ')
           file_contents.gsub!(/,? algorithm: :concurrently/, '')
           file_contents.gsub!(/ ((change|drop|rename)_table) /, ' unsafe_\1 ')
