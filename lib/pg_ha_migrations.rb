@@ -5,7 +5,6 @@ require "active_record/migration"
 require "relation_to_struct"
 
 module PgHaMigrations
-  ActiveRecord::Migration.disable_ddl_transaction = true
   LOCK_TIMEOUT_SECONDS = 5
   LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER = 5
 
@@ -29,6 +28,7 @@ require "pg_ha_migrations/safe_statements"
 require "pg_ha_migrations/allowed_versions"
 require "pg_ha_migrations/migration_modifier"
 require "pg_ha_migrations/railtie"
+require "pg_ha_migrations/hacks/disable_ddl_transaction"
 
 PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migrations_class|
   migrations_class.prepend(PgHaMigrations::SafeStatements)
