@@ -1,6 +1,10 @@
 # PgHaMigrations
 
-PgHaMigrations is a gem that applies learned best practices to ActiveRecord Migrations.
+We've documented our learned best practices for applying schema changes without downtime in the post [PostgreSQL at Scale: Database Schema Changes Without Downtime](https://medium.com/braintree-product-technology/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680) on the [Braintree Product and Technology Blog](https://medium.com/braintree-product-technology). Many of the approaches we take and choices we've made are explained in much greater depth there than in this README.
+
+Internally we apply those best practices to our Rails applications through this gem which updates ActiveRecord migrations to clearly delineate safe and unsafe DDL as well as provide safe alternatives where possible.
+
+Some projects attempt to hide complexity by having code determine the intent and magically do the right series of operations. But we (and by extension this gem) take the approach that it's better to understand exactly what the database is doing so that (particularly long running) operations are not a surprise during your deploy cycle.
 
 Provided functionality:
 - [Migrations](#migrations)
@@ -25,6 +29,20 @@ Or install it yourself as:
     $ gem install pg_ha_migrations
 
 ## Usage
+
+### Rollback
+
+Because we require that ["Rollback strategies do not involve reverting the database schema to its previous version"](https://medium.com/braintree-product-technology/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#360a), PgHaMigrations does not support ActiveRecord's automatic migration rollback capability.
+
+Instead we write all of our migrations with only an `def up` method like:
+
+```
+def up
+  safe_add_column :table, :column
+end
+```
+
+and never use `def change`. We believe that this is the only safe approach in production environments. For development environments we iterate by recreating the database from scratch every time we make a change.
 
 ### Migrations
 
