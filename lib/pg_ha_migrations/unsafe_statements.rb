@@ -4,7 +4,7 @@ module PgHaMigrations::UnsafeStatements
       arg_list = args.map { |arg| arg.inspect }.join(', ')
       # say_with_time args taken from https://github.com/rails/rails/blob/4-2-stable/activerecord/lib/active_record/migration.rb#L654
       say_with_time "#{method_name}(#{arg_list})" do
-        connection.send(method_name, *args, &block)
+        self.class.superclass.send(method_name, *args, &block)
       end
     end
   end
@@ -75,5 +75,3 @@ module PgHaMigrations::UnsafeStatements
     raise PgHaMigrations::UnsafeMigrationError.new(":add_foreign_key is NOT SAFE! Explicitly call :unsafe_add_foreign_key only if you have guidance from a migration reviewer in #service-app-db.")
   end
 end
-
-ActiveRecord::Migration.send(:prepend, PgHaMigrations::UnsafeStatements)

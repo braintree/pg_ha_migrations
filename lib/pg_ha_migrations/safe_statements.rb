@@ -188,5 +188,3 @@ module PgHaMigrations::SafeStatements
     end
   end
 end
-
-ActiveRecord::Migration.send(:prepend, PgHaMigrations::SafeStatements)

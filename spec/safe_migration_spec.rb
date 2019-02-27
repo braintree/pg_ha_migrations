@@ -527,7 +527,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             indexes = ActiveRecord::Base.connection.indexes("foos")
             expect(indexes.size).to eq(1)
-            expect(indexes.first.to_h).to include(:table => "foos", :name => "index_foos_on_bar", :columns => ["bar"])
+            expect(indexes.first).to have_attributes(:table => "foos", :name => "index_foos_on_bar", :columns => ["bar"])
           end
         end
 
