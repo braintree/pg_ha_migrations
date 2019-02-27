@@ -1,11 +1,7 @@
 module PgHaMigrations::UnsafeStatements
   def self.delegate_unsafe_method_to_connection(method_name)
     define_method("unsafe_#{method_name}") do |*args, &block|
-      arg_list = args.map { |arg| arg.inspect }.join(', ')
-      # say_with_time args taken from https://github.com/rails/rails/blob/4-2-stable/activerecord/lib/active_record/migration.rb#L654
-      say_with_time "#{method_name}(#{arg_list})" do
         self.class.superclass.send(method_name, *args, &block)
-      end
     end
   end
 
