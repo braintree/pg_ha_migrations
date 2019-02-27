@@ -6,11 +6,19 @@ require "pg_ha_migrations/version"
 Gem::Specification.new do |spec|
   spec.name          = "pg_ha_migrations"
   spec.version       = PgHaMigrations::VERSION
-  spec.authors       = ["jcoleman"]
+  spec.authors       = %w{
+    celeen
+    cosgroveb
+    jaronkk
+    jcoleman
+    kexline4710
+    mgates
+    redneckbeard
+  }
   spec.email         = ["code@getbraintree.com"]
 
-  spec.summary       = %q{}
-  spec.description   = %q{}
+  spec.summary       = %q{Enforces DDL/migration safety in Ruby on Rails project with an emphasis on explicitly choosing trade-offs and avoiding unnecessary magic.}
+  spec.description   = %q{Enforces DDL/migration safety in Ruby on Rails project with an emphasis on explicitly choosing trade-offs and avoiding unnecessary magic.}
   spec.homepage      = ""
   spec.license       = "MIT"
 
