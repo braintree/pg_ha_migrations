@@ -9,10 +9,10 @@ module PgHaMigrations::UnsafeStatements
       # is not implemented in real methods but rather by proxying.
       #
       # For example, ActiveRecord::Migration doesn't define #create_table.
-      # Instead ActiveRecord::Migration#method_missing proxies the  method
+      # Instead ActiveRecord::Migration#method_missing proxies the method
       # to the connection. However some migration compatibility version
-      # subclasses do doesn't explicitly define #create_table, so we can't
-      # solely rely on only one way of finding the proper dispatch target.
+      # subclasses _do_ explicitly define #create_table, so we can't rely
+      # on only one way of finding the proper dispatch target.
 
       # Exclude our `raise` guard implementations.
       ancestors_without_unsafe_statements = self.class.ancestors - [PgHaMigrations::UnsafeStatements]
