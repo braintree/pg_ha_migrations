@@ -27,6 +27,7 @@ require "pg_ha_migrations/unsafe_statements"
 require "pg_ha_migrations/safe_statements"
 require "pg_ha_migrations/allowed_versions"
 require "pg_ha_migrations/railtie"
+require "pg_ha_migrations/hacks/disable_ddl_transaction"
 
 module PgHaMigrations::AutoIncluder
   def inherited(klass)
