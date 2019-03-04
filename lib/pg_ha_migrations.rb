@@ -28,7 +28,13 @@ require "pg_ha_migrations/safe_statements"
 require "pg_ha_migrations/allowed_versions"
 require "pg_ha_migrations/railtie"
 
-PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migrations_class|
-  migrations_class.prepend(PgHaMigrations::SafeStatements)
-  migrations_class.prepend(PgHaMigrations::UnsafeStatements)
+module PgHaMigrations::AutoIncluder
+  def inherited(klass)
+    super(klass) if defined?(super)
+
+    klass.prepend(PgHaMigrations::SafeStatements)
+    klass.prepend(PgHaMigrations::UnsafeStatements)
+  end
 end
+
+ActiveRecord::Migration.singleton_class.prepend(PgHaMigrations::AutoIncluder)
