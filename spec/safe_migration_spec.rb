@@ -1,9 +1,7 @@
 require "spec_helper"
 
 RSpec.describe PgHaMigrations::SafeStatements do
-  MIGRATION_CLASSES_TO_TEST = PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS
-
-  MIGRATION_CLASSES_TO_TEST.each do |migration_klass|
+  PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
     describe migration_klass do
       it "can be used as a migration class" do
         expect do
@@ -39,7 +37,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.migrate(:up)
 
-            expect($stdout.string).to match(/migrating.*create_table\(:foos\).*migrated \([0-9.]+s\)/m)
+            expect($stdout.string).to match(/migrating.*create_table\(:foos[^\)]*\).*migrated \([0-9.]+s\)/m)
           ensure
             $stdout = original_stdout
           end
@@ -209,6 +207,33 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
       describe PgHaMigrations::SafeStatements do
         describe "safe_create_table" do
+          # This test is also particularly helpful for exposing issues
+          # with inheritance from the compatibilty hierarchy, but we
+          # have targeted tests for that also.
+          it "uses the right pk datatype" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos3 do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            columns = ActiveRecord::Base.connection.columns("foos3")
+            id_column = columns.find { |column| column.name == "id" }
+
+            expect(id_column.sql_type).to eq(
+              if [ActiveRecord::Migration[4.2], ActiveRecord::Migration[5.0]].include?(migration_klass)
+                "integer"
+              else
+                "bigint"
+              end
+            )
+          end
+
           it "creates the table with columns of the right type" do
             expect(ActiveRecord::Base.connection.tables).not_to include("foos3")
 
@@ -626,6 +651,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
         describe "#adjust_lock_timeout" do
           let(:table_name) { "bogus_table" }
+          let(:migration) { Class.new(migration_klass).new }
 
           before(:each) do
             skip "Only relevant on Postgres 9.3+" unless ActiveRecord::Base.connection.postgresql_version >= 90300
@@ -644,15 +670,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "runs the block" do
-            migration = migration_klass.new
             expect do |block|
               migration.adjust_lock_timeout(5, &block)
             end.to yield_control
           end
 
           it "changes the lock_timeout to the requested value in seconds" do
-            migration = migration_klass.new
-
             seconds = (@original_timeout_in_milliseconds / 1000) + 5
             migration.adjust_lock_timeout(seconds) do
               expect(ActiveRecord::Base.value_from_sql("SHOW lock_timeout")).to eq("#{seconds}s")
@@ -660,8 +683,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "resets the lock_timeout to the original values even after an exception" do
-            migration = migration_klass.new
-
             seconds = (@original_timeout_in_milliseconds / 1000) + 5
             expect do
               migration.adjust_lock_timeout(seconds) do
@@ -673,8 +694,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "resets the lock_timeout to the original values even after a SQL failure in a transaction" do
-            migration = migration_klass.new
-
             seconds = (@original_timeout_in_milliseconds / 1000) + 5
             expect do
               migration.connection.transaction do
@@ -690,6 +709,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
         describe "#adjust_statement_timeout" do
           let(:table_name) { "bogus_table" }
+          let(:migration) { Class.new(migration_klass).new }
 
           before(:each) do
             ActiveRecord::Base.connection.execute("CREATE TABLE #{table_name}(pk SERIAL, i INTEGER)")
@@ -706,15 +726,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "runs the block" do
-            migration = migration_klass.new
             expect do |block|
               migration.adjust_statement_timeout(5, &block)
             end.to yield_control
           end
 
           it "changes the statement_timeout to the requested value in seconds" do
-            migration = migration_klass.new
-
             seconds = (@original_timeout_in_milliseconds / 1000) + 5
             migration.adjust_statement_timeout(seconds) do
               expect(ActiveRecord::Base.value_from_sql("SHOW statement_timeout")).to eq("#{seconds}s")
@@ -722,8 +739,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "resets the statement_timeout to the original values even after an exception" do
-            migration = migration_klass.new
-
             seconds = (@original_timeout_in_milliseconds / 1000) + 5
             expect do
               migration.adjust_statement_timeout(seconds) do
@@ -735,8 +750,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "resets the statement_timeout to the original values even after a SQL failure in a transaction" do
-            migration = migration_klass.new
-
             seconds = (@original_timeout_in_milliseconds / 1000) + 5
             expect do
               migration.connection.transaction do
@@ -758,7 +771,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             let(:alternate_connection) do
               alternate_connection_pool.connection
             end
-            let(:migration) { migration_klass.new }
+            let(:migration) { Class.new(migration_klass).new }
             let(:table_lock_struct) { Struct.new(:table, :lock_type) }
 
             before(:each) do
