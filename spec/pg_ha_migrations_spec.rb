@@ -1,6 +1,10 @@
 require "spec_helper"
 
 RSpec.describe PgHaMigrations do
+  it "disables ddl transactions" do
+    expect(ActiveRecord::Migration.disable_ddl_transaction).to be_truthy
+  end
+
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
     describe "interaction with ActiveRecord::Migration::Compatibility inheritance hierarchy with #{migration_klass.name}" do
       let(:subclass) { Class.new(migration_klass) }
