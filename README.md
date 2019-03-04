@@ -1,5 +1,7 @@
 # PgHaMigrations
 
+[![Build Status](https://travis-ci.org/braintree/pg_ha_migrations.svg?branch=master)](https://travis-ci.org/braintree/pg_ha_migrations/)
+
 We've documented our learned best practices for applying schema changes without downtime in the post [PostgreSQL at Scale: Database Schema Changes Without Downtime](https://medium.com/braintree-product-technology/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680) on the [Braintree Product and Technology Blog](https://medium.com/braintree-product-technology). Many of the approaches we take and choices we've made are explained in much greater depth there than in this README.
 
 Internally we apply those best practices to our Rails applications through this gem which updates ActiveRecord migrations to clearly delineate safe and unsafe DDL as well as provide safe alternatives where possible.
