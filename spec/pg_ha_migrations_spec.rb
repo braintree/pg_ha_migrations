@@ -5,6 +5,34 @@ RSpec.describe PgHaMigrations do
     expect(ActiveRecord::Migration.disable_ddl_transaction).to be_truthy
   end
 
+  describe "config" do
+    after(:each) do
+      PgHaMigrations.instance_variable_set(:@config, nil)
+    end
+
+    context "disable_default_migration_methods" do
+      context "by default" do
+        it "is set to true" do
+          expect(PgHaMigrations.config.disable_default_migration_methods)
+            .to be(true)
+        end
+      end
+
+      context "overridden to be false" do
+        before(:each) do
+          PgHaMigrations.configure do |config|
+            config.disable_default_migration_methods = false
+          end
+        end
+
+        it "is set to false" do
+          expect(PgHaMigrations.config.disable_default_migration_methods)
+            .to be(false)
+        end
+      end
+    end
+  end
+
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
     describe "interaction with ActiveRecord::Migration::Compatibility inheritance hierarchy with #{migration_klass.name}" do
       let(:subclass) { Class.new(migration_klass) }

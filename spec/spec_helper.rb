@@ -16,19 +16,19 @@ RSpec.configure do |config|
 
   config.before(:all) do
     ActiveRecord::Base.connection.tables.each do |table|
-      ActiveRecord::Base.connection.execute("DROP TABLE #{table}")
+      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
     end
     ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
-      ActiveRecord::Base.connection.execute("DROP TYPE #{enum}")
+      ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
     end
   end
 
   config.after(:each) do
     ActiveRecord::Base.connection.tables.each do |table|
-      ActiveRecord::Base.connection.execute("DROP TABLE #{table}")
+      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
     end
     ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
-      ActiveRecord::Base.connection.execute("DROP TYPE #{enum}")
+      ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
     end
   end
 
