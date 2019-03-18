@@ -48,7 +48,7 @@ and never use `def change`. We believe that this is the only safe approach in pr
 
 ### Migrations
 
-In general, existing migrations are prefixed with `unsafe_` and safer alternatives are provided prefixed with `safe_`. 
+In general, existing migrations are prefixed with `unsafe_` and safer alternatives are provided prefixed with `safe_`.
 
 Migrations prefixed with `unsafe_` will warn when invoked. The API is designed to be explicit yet remain flexible. There may be situations where invoking the unsafe migration is preferred.
 
@@ -195,6 +195,19 @@ Set maintenance work mem.
 safe_set_maintenance_work_mem_gb 1
 ```
 
+### Configuration
+
+The gem can be configured in an initializer.
+
+```ruby
+PgHaMigrations.configure do |config|
+  # ...
+end
+```
+
+#### Available options
+
+- `disable_default_migration_methods`: If true, the default implementations of DDL changes in `ActiveRecord::Migration` and the PostgreSQL adapter will be overridden by implementations that raise a `PgHaMigrations::UnsafeMigrationError`. Default: `true`
 
 ### Rake Tasks
 

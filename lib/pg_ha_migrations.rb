@@ -5,6 +5,16 @@ require "active_record/migration"
 require "relation_to_struct"
 
 module PgHaMigrations
+  Config = Struct.new(:disable_default_migration_methods)
+
+  def self.config
+    @config ||= Config.new(true)
+  end
+
+  def self.configure
+    yield config
+  end
+
   LOCK_TIMEOUT_SECONDS = 5
   LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER = 5
 
