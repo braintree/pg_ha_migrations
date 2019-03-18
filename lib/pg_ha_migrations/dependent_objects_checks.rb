@@ -11,7 +11,7 @@ module PgHaMigrations::DependentObjectsChecks
     allowed_types = arguments.last.is_a?(Hash) ? arguments.last[:allow_dependent_objects] || [] : []
 
     if (invalid_allowed_types = allowed_types - ALLOWED_TYPES_OPTIONS).present?
-      raise ArgumentError, "invalid_allowed_types: #{invalid_allowed_types}"
+      raise ArgumentError, "Received invalid entries in allow_dependent_objects: #{invalid_allowed_types.inspect}"
     end
 
     dependent_objects = []
@@ -39,8 +39,9 @@ module PgHaMigrations::DependentObjectsChecks
           JOIN pg_catalog.pg_class dep_class ON dep_class.oid = pg_depend.objid
           WHERE pg_depend.deptype = 'a'
             AND pg_depend.refclassid = 'pg_class'::regclass
-            AND ref_class.relname = '#{table_name}'
-            AND ref_attr.attname = '#{column_name}'
+            -- This doesn't currently handle table names that are duplicative across schemas.
+            AND ref_class.relname = '#{PG::Connection.escape_string(table_name.to_s)}'
+            AND ref_attr.attname = '#{PG::Connection.escape_string(column_name.to_s)}'
             AND pg_depend.classid = 'pg_class'::regclass
         SQL
         dependent_objects.concat(indexes)

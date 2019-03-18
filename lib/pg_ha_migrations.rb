@@ -5,10 +5,16 @@ require "active_record/migration"
 require "relation_to_struct"
 
 module PgHaMigrations
-  Config = Struct.new(:disable_default_migration_methods)
+  Config = Struct.new(
+    :disable_default_migration_methods,
+    :check_for_dependent_objects
+  )
 
   def self.config
-    @config ||= Config.new(true)
+    @config ||= Config.new(
+      true,
+      false
+    )
   end
 
   def self.configure
