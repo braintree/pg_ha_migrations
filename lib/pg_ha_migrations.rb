@@ -1,14 +1,17 @@
 require "pg_ha_migrations/version"
+require "pg_ha_migrations/config"
 require "rails"
 require "active_record"
 require "active_record/migration"
 require "relation_to_struct"
 
 module PgHaMigrations
-  Config = Struct.new(:disable_default_migration_methods)
+  DEFAULT_CONFIG = {
+    disable_default_migration_methods: true,
+  }
 
   def self.config
-    @config ||= Config.new(true)
+    @config ||= Config.new(**DEFAULT_CONFIG)
   end
 
   def self.configure
