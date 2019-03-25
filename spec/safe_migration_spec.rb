@@ -1278,5 +1278,52 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
       end
     end
+
+    describe "disable_ddl_transaction" do
+      context "when instance variable is unset" do
+        let(:migration) do
+          Class.new(migration_klass).new
+        end
+
+        context "when configured globally to be true" do
+          before(:each) do
+            allow(PgHaMigrations.config).to receive(:disable_ddl_transactions)
+              .and_return(true)
+          end
+
+          it "is true" do
+            expect(migration.disable_ddl_transaction).to be true
+          end
+        end
+
+        context "when configured globally to be false" do
+          before(:each) do
+            allow(PgHaMigrations.config).to receive(:disable_ddl_transactions)
+              .and_return(false)
+          end
+
+          it "is false" do
+            expect(migration.disable_ddl_transaction).to be false
+          end
+        end
+      end
+
+      context "when instance variable is set" do
+        let(:migration) do
+          Class.new(migration_klass) do
+            disable_ddl_transaction!
+          end.new
+        end
+
+        before(:each) do
+          allow(PgHaMigrations.config).to receive(:disable_ddl_transaction)
+            .and_return(false)
+        end
+
+        it "uses the instance variable value" do
+          expect(migration.disable_ddl_transaction).to be true
+        end
+      end
+    end
   end
 end

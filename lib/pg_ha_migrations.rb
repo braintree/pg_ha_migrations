@@ -7,6 +7,7 @@ require "relation_to_struct"
 
 module PgHaMigrations
   DEFAULT_CONFIG = {
+    disable_ddl_transactions: true,
     disable_default_migration_methods: true,
   }
 

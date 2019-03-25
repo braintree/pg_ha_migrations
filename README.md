@@ -208,6 +208,7 @@ end
 #### Available options
 
 - `disable_default_migration_methods`: If true, the default implementations of DDL changes in `ActiveRecord::Migration` and the PostgreSQL adapter will be overridden by implementations that raise a `PgHaMigrations::UnsafeMigrationError`. Default: `true`
+- `disable_ddl_transactions`: If true, migrations will not run in a DDL transaction, helping to avoid situations where locks are acquired on many objects at once. Default: `true`
 
 ### Rake Tasks
 

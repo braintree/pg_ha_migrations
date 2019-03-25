@@ -31,6 +31,28 @@ RSpec.describe PgHaMigrations do
         end
       end
     end
+
+    context "disable_ddl_transactions" do
+      context "by default" do
+        it "is set to true" do
+          expect(PgHaMigrations.config.disable_ddl_transactions)
+            .to be(true)
+        end
+      end
+
+      context "overridden to be false" do
+        before(:each) do
+          PgHaMigrations.configure do |config|
+            config.disable_ddl_transactions = false
+          end
+        end
+
+        it "is set to false" do
+          expect(PgHaMigrations.config.disable_ddl_transactions)
+            .to be(false)
+        end
+      end
+    end
   end
 
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
