@@ -104,6 +104,12 @@ module PgHaMigrations::SafeStatements
 
   def safely_acquire_lock_for_table(table, &block)
     _check_postgres_adapter!
+
+    # This method is NOT safe to run more than once in a DDL transaction,
+    # as it could potentially lead to multiple tables being locked
+    # indefinitely
+    return block.call unless disable_ddl_transaction
+
     table = table.to_s
     quoted_table_name = connection.quote_table_name(table)
 

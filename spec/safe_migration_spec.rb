@@ -1118,6 +1118,25 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
               end.not_to make_database_queries(matching: /lock_timeout/i)
             end
+
+            context "with DDL transactions enabled" do
+              before(:each) do
+                allow(migration).to receive(:disable_ddl_transaction)
+                  .and_return(false)
+              end
+
+              it "executes the block" do
+                expect do |block|
+                  migration.safely_acquire_lock_for_table(table_name, &block)
+                end.to yield_control
+              end
+
+              it "acquires an exclusive lock on the table" do
+                migration.safely_acquire_lock_for_table(table_name) do
+                  expect(locks_for_table(table_name, connection: alternate_connection)).to eq([])
+                end
+              end
+            end
           end
         end
 
