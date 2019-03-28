@@ -32,12 +32,6 @@ module PgHaMigrations::SafeStatements
     unsafe_add_column(table, column, type, options)
   end
 
-  def unsafe_add_column(table, column, type, options = {})
-    safely_acquire_lock_for_table(table) do
-      super(table, column, type, options)
-    end
-  end
-
   def safe_change_column_default(table, column, default_value)
     escaped_value = case default_value
     when Proc
