@@ -48,11 +48,23 @@ and never use `def change`. We believe that this is the only safe approach in pr
 
 ### Migrations
 
-In general, existing migrations are prefixed with `unsafe_` and safer alternatives are provided prefixed with `safe_`.
+There are two major classes of concerns we try to handle in the API:
 
-Migrations prefixed with `unsafe_` will warn when invoked. The API is designed to be explicit yet remain flexible. There may be situations where invoking the unsafe migration is preferred.
+- Database safety (e.g., long-held locks)
+- Application safety (e.g., dropping columns the app uses)
 
-Migrations prefixed with `safe_` prefer concurrent operations where available, set low lock timeouts where appropriate, and decompose operations into multiple safe steps.
+We rename migration methods with prefixes denoting their safety level:
+
+- `safe_*`: These methods check for both application and database safety concerns prefer concurrent operations where available, set low lock timeouts where appropriate, and decompose operations into multiple safe steps.
+- `unsafe_*`: These methods are generally a direct dispatch to the native ActiveRecord migration method.
+
+Calling the original migration methods without a prefix will raise an error.
+
+The API is designed to be explicit yet remain flexible. There may be situations where invoking the `unsafe_*` method is preferred (or the only option available for definitionally unsafe operations).
+
+While `unsafe_*` methods were historically (through 1.0) pure wrappers for invoking the native ActiveRecord migration method, there is a class of problems that we can't handle easily without breaking that design rule a bit. For example, dropping a column is unsafe from an application perspective, so we make the application safety concerns explicit by using an `unsafe_` prefix. Using `unsafe_remove_column` calls out the need to audit the application to confirm the migration won't break the application. Because there are no safe alternatives we don't define a `safe_remove_column` analogue. However there are still conditions we'd like to assert before dropping a column. For example, dropping an unused column that's used in one or more indexes may be safe from an application perspective, but the cascading drop of the index won't use a `CONCURRENT` operation to drop the dependent indexes and is therefore unsafe from a database perspective.
+
+When `unsafe_*` migration methods support checks of this type you can bypass the checks by passing an `:allow_dependent_objects` key in the method's `options` hash containing an array of dependent object types you'd like to allow. Until 2.0 none of these checks will run by default, but you can opt-in by setting `config.check_for_dependent_objects = true` [in your configuration initializer](#configuration).
 
 [Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/braintree-product-technology/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22). For that reason, this gem [disables DDL transactions](./lib/pg_ha_migrations.rb:8) by default. You can change this by resetting `ActiveRecord::Migration.disable_ddl_transaction` in your application.
 
@@ -208,6 +220,7 @@ end
 #### Available options
 
 - `disable_default_migration_methods`: If true, the default implementations of DDL changes in `ActiveRecord::Migration` and the PostgreSQL adapter will be overridden by implementations that raise a `PgHaMigrations::UnsafeMigrationError`. Default: `true`
+- `check_for_dependent_objects`: If true, some `unsafe_*` migration methods will raise a `PgHaMigrations::UnsafeMigrationError` if any dependent objects exist. Default: `false`
 
 ### Rake Tasks
 

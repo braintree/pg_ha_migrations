@@ -11,24 +11,30 @@ RSpec.describe PgHaMigrations do
     end
 
     context "disable_default_migration_methods" do
-      context "by default" do
-        it "is set to true" do
-          expect(PgHaMigrations.config.disable_default_migration_methods)
-            .to be(true)
-        end
+      it "is set to true by default" do
+        expect(PgHaMigrations.config.disable_default_migration_methods).to be(true)
       end
 
-      context "overridden to be false" do
-        before(:each) do
-          PgHaMigrations.configure do |config|
-            config.disable_default_migration_methods = false
-          end
+      it "can be overriden to false" do
+        PgHaMigrations.configure do |config|
+          config.disable_default_migration_methods = false
         end
 
-        it "is set to false" do
-          expect(PgHaMigrations.config.disable_default_migration_methods)
-            .to be(false)
+        expect(PgHaMigrations.config.disable_default_migration_methods).to be(false)
+      end
+    end
+
+    context "check_for_dependent_objects" do
+      it "is set to false by default" do
+        expect(PgHaMigrations.config.check_for_dependent_objects).to be(false)
+      end
+
+      it "can be overriden to true" do
+        PgHaMigrations.configure do |config|
+          config.check_for_dependent_objects = true
         end
+
+        expect(PgHaMigrations.config.check_for_dependent_objects).to be(true)
       end
     end
   end

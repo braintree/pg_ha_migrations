@@ -1,6 +1,10 @@
 module PgHaMigrations::UnsafeStatements
   def self.disable_or_delegate_default_method(method_name, error_message, allow_reentry_from_compatibility_module: false)
     define_method(method_name) do |*args, &block|
+      if PgHaMigrations.config.check_for_dependent_objects
+        disallow_migration_method_if_dependent_objects!(method_name, arguments: args)
+      end
+
       if PgHaMigrations.config.disable_default_migration_methods
         # Most migration methods are only ever called by a migration and
         # therefore aren't re-entrant or callable from another migration
@@ -19,6 +23,10 @@ module PgHaMigrations::UnsafeStatements
 
   def self.delegate_unsafe_method_to_migration_base_class(method_name)
     define_method("unsafe_#{method_name}") do |*args, &block|
+      if PgHaMigrations.config.check_for_dependent_objects
+        disallow_migration_method_if_dependent_objects!(method_name, arguments: args)
+      end
+
       execute_ancestor_statement(method_name, *args, &block)
     end
   end
