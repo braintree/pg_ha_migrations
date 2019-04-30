@@ -45,6 +45,7 @@ require "pg_ha_migrations/dependent_objects_checks"
 require "pg_ha_migrations/allowed_versions"
 require "pg_ha_migrations/railtie"
 require "pg_ha_migrations/hacks/disable_ddl_transaction"
+require "pg_ha_migrations/unrun_migrations"
 
 module PgHaMigrations::AutoIncluder
   def inherited(klass)

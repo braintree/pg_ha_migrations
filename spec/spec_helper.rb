@@ -1,6 +1,7 @@
 require "bundler/setup"
 require "pg_ha_migrations"
 require "db-query-matchers"
+require "pry"
 
 puts "rspec config"
 RSpec.configure do |config|
