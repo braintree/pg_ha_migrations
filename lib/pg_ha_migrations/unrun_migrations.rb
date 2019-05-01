@@ -36,7 +36,8 @@ module PgHaMigrations
       migration_file.split("/").last.split("_").first
     end
 
-    def self._migration_files(target, suffix)
+    def self._migration_files(suffix)
+      []
     end
   end
 end
