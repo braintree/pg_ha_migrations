@@ -62,7 +62,11 @@ module PgHaMigrations
     end
 
     def parse_command(command_string)
-      []
+      if command_string.blank?
+        ["exit"]
+      else
+        command_string.split
+      end
     end
 
     def migrate_command
@@ -70,11 +74,23 @@ module PgHaMigrations
     end
 
     def should_exit?(command)
-      true
+      command == "exit"
     end
 
-    def execute_command(commad)
+    def execute_command(command)
+      execute_print(command[1..-1])
+    end
 
+    def execute_print(args)
+      print_command = args.shift
+      case print_command
+      when "migrations_state"
+        _puts migrations_state
+      when "blocking_database_transactions"
+        _puts blocking_database_transactions
+      when "instructions"
+        _puts instructions
+      end
     end
 
     def _gets
