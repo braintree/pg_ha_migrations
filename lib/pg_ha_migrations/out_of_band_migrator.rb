@@ -1,7 +1,7 @@
 module PgHaMigrations
   class OutOfBandMigrator
-    def initialize(suffix, stdin=STDIN, stdout=STDOUT)
-      @suffix = suffix
+    def initialize(migration_files_path, stdin=STDIN, stdout=STDOUT)
+      @migration_files_path = migration_files_path
       @stdin = stdin
       @stdout = stdout
     end
@@ -26,9 +26,9 @@ module PgHaMigrations
     end
 
     def migrations_state
-      unrun_migrations = PgHaMigrations::UnrunMigrations.unrun_migrations(@suffix)
+      unrun_migrations = PgHaMigrations::UnrunMigrations.unrun_migrations(@migration_files_path)
       if unrun_migrations.any?
-        unrun_migrations_report = PgHaMigrations::UnrunMigrations.report(@suffix)
+        unrun_migrations_report = PgHaMigrations::UnrunMigrations.report(@migration_files_path)
       else
         unrun_migrations_report = "No unrun out-of-band migrations."
       end
@@ -83,9 +83,25 @@ module PgHaMigrations
       case cmd
       when "print"
         execute_print(args)
+      when "migrate"
+        execute_migrate(args)
       else
         _puts argument_error
       end
+    end
+
+    def execute_migrate(args)
+      target_version = args.first.to_i
+      migration_to_run = context.migrations.find {|m| m.version == target_version }
+      unless migration_to_run
+        _puts "Migration #{target_version} does not exist in #{@migration_files_path}."
+        return
+      end
+      PgHaMigrations::LongRunningMigrator.new(:up, [migration_to_run]).migrate
+    end
+
+    def context
+      @migration_context ||= ActiveRecord::MigrationContext.new(@migration_files_path)
     end
 
     def execute_print(args)
