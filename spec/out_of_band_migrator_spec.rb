@@ -142,6 +142,30 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
       expect(stdout.string.scan(/Transaction 3/).size).to eq(2)
       expect(stdout.string.scan(/Transaction 4/).size).to eq(2)
     end
+
+    it "displays error for unknown print command" do
+      stdin = StringIO.new
+      stdout = StringIO.new
+      stdin.puts "print foo"
+      stdin.puts "exit"
+      stdin.rewind
+      migrator = PgHaMigrations::OutOfBandMigrator.new("_oob", stdin, stdout)
+      migrator.run
+
+      expect(stdout.string).to match(/Unknown command./)
+    end
+
+    it "displays error for unknown top level command" do
+      stdin = StringIO.new
+      stdout = StringIO.new
+      stdin.puts "dosomething"
+      stdin.puts "exit"
+      stdin.rewind
+      migrator = PgHaMigrations::OutOfBandMigrator.new("_oob", stdin, stdout)
+      migrator.run
+
+      expect(stdout.string).to match(/Unknown command./)
+    end
   end
 
   describe "instructions" do

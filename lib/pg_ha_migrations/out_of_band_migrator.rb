@@ -78,7 +78,14 @@ module PgHaMigrations
     end
 
     def execute_command(command)
-      execute_print(command[1..-1])
+      cmd = command.shift
+      args = command
+      case cmd
+      when "print"
+        execute_print(args)
+      else
+        _puts argument_error
+      end
     end
 
     def execute_print(args)
@@ -90,7 +97,13 @@ module PgHaMigrations
         _puts blocking_database_transactions
       when "instructions"
         _puts instructions
+      else
+        _puts argument_error
       end
+    end
+
+    def argument_error
+      "Unknown command.\n\n" + instructions
     end
 
     def _gets
