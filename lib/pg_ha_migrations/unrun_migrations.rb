@@ -1,5 +1,11 @@
 module PgHaMigrations
   module UnrunMigrations
+    def self.report(suffix)
+      migrations = unrun_migrations(suffix)
+      "Unrun migrations:\n" +
+        migrations.map { |migration| migration[:version] }.join("\n")
+    end
+
     def self.unrun_migrations(suffix)
       _expected_migrations(suffix) - _actual_migrations(suffix)
     end
