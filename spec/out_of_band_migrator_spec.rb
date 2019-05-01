@@ -16,26 +16,8 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
       expect(stdout.string).to match(/exit/)
     end
 
-    it "prints the migrations state" do
-      migration = Class.new(ActiveRecord::Migration::Current) do
-        def up
-          safe_create_table :foos1 do |t|
-            t.timestamps :null => false
-            t.text :text_column
-          end
-          safe_create_table :foos2 do |t|
-            t.timestamps :null => false
-            t.text :text_column
-          end
-        end
-      end
-
-      migration.version = 24000
-      migration.name = "240_00"
-
-      migration.suppress_messages do
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
-      end
+    it "always prints the migrations state" do
+      run_migration
 
       allow(PgHaMigrations::UnrunMigrations).to receive(:_migration_files).with("_oob").and_return(
         [
@@ -49,7 +31,6 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
 
       stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "migrations_state"
       stdin.puts "exit"
       stdin.rewind
       migrator = PgHaMigrations::OutOfBandMigrator.new("_oob", stdin, stdout)
@@ -61,6 +42,33 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
       expect(stdout.string).to match(/924202/)
       expect(stdout.string).to match(/924203/)
       expect(stdout.string).to match(/924204/)
+    end
+
+    it "always prints blocking db transactions" do
+      report = """
+       Potentially blocking database transactions:
+       Transaction 1
+       Transaction 2
+       Transaction 3
+       Transaction 4
+      """
+
+      blocking_transactions = [1, 2, 3, 4]
+      allow(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:get_blocking_transactions).and_return(blocking_transactions)
+      allow(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:report).with(blocking_transactions).and_return(report)
+
+      stdin = StringIO.new
+      stdout = StringIO.new
+      stdin.puts "exit"
+      stdin.rewind
+      migrator = PgHaMigrations::OutOfBandMigrator.new("_oob", stdin, stdout)
+      migrator.run
+
+      expect(stdout.string).to match(/Potentially blocking database transactions/)
+      expect(stdout.string).to match(/Transaction 1/)
+      expect(stdout.string).to match(/Transaction 2/)
+      expect(stdout.string).to match(/Transaction 3/)
+      expect(stdout.string).to match(/Transaction 4/)
     end
   end
 
@@ -77,6 +85,28 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
 
   describe "migrations state" do
     it "includes the migration report" do
+    end
+  end
+
+  def run_migration
+    migration = Class.new(ActiveRecord::Migration::Current) do
+      def up
+        safe_create_table :foos1 do |t|
+          t.timestamps :null => false
+          t.text :text_column
+        end
+        safe_create_table :foos2 do |t|
+          t.timestamps :null => false
+          t.text :text_column
+        end
+      end
+    end
+
+    migration.version = 24000
+    migration.name = "240_00"
+
+    migration.suppress_messages do
+      ActiveRecord::Migrator.new(:up, [migration]).migrate
     end
   end
 end

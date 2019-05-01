@@ -52,7 +52,12 @@ module PgHaMigrations
     end
 
     def blocking_database_transactions
+      blocking_transactions = PgHaMigrations::BlockingDatabaseTransactionsReporter.get_blocking_transactions
+      report = PgHaMigrations::BlockingDatabaseTransactionsReporter.report(blocking_transactions)
       """
+        ========================== Blocking Database Transactions ==========================
+        #{report.lines.map{ |line| "\t#{line}" }.join(" ")}
+        ====================================================================================
       """
     end
 
