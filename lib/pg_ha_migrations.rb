@@ -37,6 +37,7 @@ module PgHaMigrations
   UnsupportedAdapter = Class.new(Exception)
 end
 
+require "readline"
 require "pg_ha_migrations/blocking_database_transactions"
 require "pg_ha_migrations/blocking_database_transactions_reporter"
 require "pg_ha_migrations/unsafe_statements"

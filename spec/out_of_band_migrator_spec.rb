@@ -5,11 +5,9 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
 
   describe "run" do
     it "prints instructions and waits for prompt" do
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string).to match(/migrations_state/)
@@ -19,12 +17,9 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
     end
 
     it "responds to instructions command" do
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "print instructions"
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("print instructions", "exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string.scan(/print migrations_state/).size).to eq(2)
@@ -36,11 +31,9 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
     it "always prints the migrations state" do
       run_migration
 
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string).to match(/Out Of Band Migrations To Be Run/)
@@ -51,12 +44,9 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
     it "responds to migrations_state command" do
       run_migration
 
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "print migrations_state"
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("print migrations_state", "exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string.scan(/Out Of Band Migrations To Be Run/).size).to eq(2)
@@ -77,11 +67,9 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
       allow(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:get_blocking_transactions).and_return(blocking_transactions)
       allow(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:report).with(blocking_transactions).and_return(report)
 
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string).to match(/Potentially blocking database transactions/)
@@ -104,12 +92,9 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
       allow(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:get_blocking_transactions).and_return(blocking_transactions)
       allow(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:report).with(blocking_transactions).and_return(report)
 
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "print blocking_database_transactions"
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("print blocking_database_transactions", "exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string.scan(/Potentially blocking database transactions/).size).to eq(2)
@@ -120,24 +105,18 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
     end
 
     it "displays error for unknown print command" do
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "print foo"
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("print foo", "exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string).to match(/Unknown command./)
     end
 
     it "displays error for unknown top level command" do
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "dosomething"
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("dosomething", "exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string).to match(/Unknown command./)
@@ -147,12 +126,9 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
       run_migration
       migrations_path = File.absolute_path("spec/data/migrations")
 
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "migrate 924201"
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("migrate 924201", "exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       migration_context = ActiveRecord::MigrationContext.new migrations_path
@@ -164,12 +140,9 @@ RSpec.describe PgHaMigrations::OutOfBandMigrator do
       run_migration
       migrations_path = File.absolute_path("spec/data/migrations")
 
-      stdin = StringIO.new
       stdout = StringIO.new
-      stdin.puts "migrate 99999"
-      stdin.puts "exit"
-      stdin.rewind
-      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdin, stdout)
+      allow(Readline).to receive(:readline).with('> ', true).and_return("migrate 99999", "exit", nil)
+      migrator = PgHaMigrations::OutOfBandMigrator.new(migrations_path, stdout)
       migrator.run
 
       expect(stdout.string).to match(/Migration 99999 does not exist in #{migrations_path}./)

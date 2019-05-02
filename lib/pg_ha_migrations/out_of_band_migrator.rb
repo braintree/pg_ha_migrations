@@ -1,8 +1,7 @@
 module PgHaMigrations
   class OutOfBandMigrator
-    def initialize(migration_files_path, stdin=STDIN, stdout=STDOUT)
+    def initialize(migration_files_path, stdout=STDOUT)
       @migration_files_path = migration_files_path
-      @stdin = stdin
       @stdout = stdout
     end
 
@@ -11,9 +10,7 @@ module PgHaMigrations
       _puts(blocking_database_transactions)
       _puts(instructions)
 
-      loop do
-        _prompt
-        command = _gets
+      while command = Readline.readline('> ', true)
         parsed_command = parse_command(command)
         if should_exit?(parsed_command[0])
           _puts("exiting...")
@@ -120,10 +117,6 @@ module PgHaMigrations
 
     def argument_error
       "Unknown command.\n\n" + instructions
-    end
-
-    def _gets
-      @stdin.gets
     end
 
     def _prompt
