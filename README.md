@@ -241,6 +241,20 @@ end
 Rake::Task["pg_ha_migrations:check_blocking_database_transactions"].enhance ["db:establish_connection"]
 ```
 
+## Out of band migrations
+
+Migrations that take a long time to run (e.g. creating indexes, dropping columns) can now be separated from the normal migration workflow by placing them in a different migrations directory and using `PgHaMigrations::OutOfBandMigrator`.
+
+`OutOfBandMigrator` offers an interactive prompt to run migrations. Given normal migrations in `db/migrate` and out of band migrations in `db/migrate_oob`, out of band migrations can be run as:
+
+```ruby
+oob_migrator = PgHaMigrations::OutOfBandMigrator.new(Rails.root.join("db/migrate_oob"))
+oob_migrator.run
+```
+
+### Things to note
+
+1. Migration versions should be in order and unique across all migration directories.
 
 ## Development
 
