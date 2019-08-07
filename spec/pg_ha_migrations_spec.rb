@@ -1,6 +1,10 @@
 require "spec_helper"
 
 RSpec.describe PgHaMigrations do
+  it "has a version number" do
+    expect(PgHaMigrations::VERSION).not_to be nil
+  end
+
   it "disables ddl transactions" do
     expect(ActiveRecord::Migration.disable_ddl_transaction).to be_truthy
   end
