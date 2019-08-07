@@ -7,13 +7,15 @@ require "relation_to_struct"
 module PgHaMigrations
   Config = Struct.new(
     :disable_default_migration_methods,
-    :check_for_dependent_objects
+    :check_for_dependent_objects,
+    :allow_force_create_table
   )
 
   def self.config
     @config ||= Config.new(
       true,
-      false
+      false,
+      true
     )
   end
 

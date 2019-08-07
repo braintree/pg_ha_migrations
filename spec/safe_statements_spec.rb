@@ -374,6 +374,54 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to_not raise_error
           end
         end
+
+        describe "disabling `force: true`" do
+          it "is allowed when config.allow_force_create_table = true" do
+            allow(PgHaMigrations.config)
+              .to receive(:allow_force_create_table)
+              .and_return(true)
+
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :items, :force => true do |t|
+                  # Empty.
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+
+            expect(ActiveRecord::Base.connection.tables).to include("items")
+          end
+
+          it "raises when config.allow_force_create_table = false" do
+            allow(PgHaMigrations.config)
+              .to receive(:allow_force_create_table)
+              .and_return(false)
+
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :items do |t|
+                  t.integer :original_column
+                end
+                unsafe_create_table :items, :force => true do |t|
+                  t.integer :new_column
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::UnsafeMigrationError, /force is not safe/i)
+
+            columns = ActiveRecord::Base.connection.columns("items")
+            column_names = columns.map(&:name)
+            expect(column_names).to include("original_column")
+            expect(column_names).not_to include("new_column")
+          end
+        end
       end
 
       describe PgHaMigrations::SafeStatements do
@@ -429,6 +477,37 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect(updated_at_column.sql_type).to eq("timestamp without time zone")
             expect(text_column.sql_type).to eq("text")
+          end
+
+          it "disallows `force: true` regardless of config.allow_force_create_table" do
+            aggregate_failures do
+              [true, false].each do |config_value|
+                allow(PgHaMigrations.config)
+                  .to receive(:allow_force_create_table)
+                  .and_return(config_value)
+
+                migration = Class.new(migration_klass) do
+                  def up
+                    unsafe_execute "DROP TABLE IF EXISTS items" # We're in a loop in the test.
+                    safe_create_table :items do |t|
+                      t.integer :original_column
+                    end
+                    safe_create_table :items, :force => true do |t|
+                      t.integer :new_column
+                    end
+                  end
+                end
+
+                expect do
+                  migration.suppress_messages { migration.migrate(:up) }
+                end.to raise_error(PgHaMigrations::UnsafeMigrationError, /force is not safe/i)
+
+                columns = ActiveRecord::Base.connection.columns("items")
+                column_names = columns.map(&:name)
+                expect(column_names).to include("original_column")
+                expect(column_names).not_to include("new_column")
+              end
+            end
           end
         end
 
