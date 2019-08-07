@@ -31,18 +31,17 @@ RSpec.configure do |config|
       ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
     end
   end
-
 end
 
 ActiveRecord::Base.configurations = {
   "test" => {
     "adapter" => 'postgresql',
-    "host" => 'localhost',
-    "port" => 5432,
+    "host" => ENV["PGHOST"] || 'localhost',
+    "port" => ENV["PGPORT"] || 5432,
     "database" => 'pg_ha_migrations_test',
     "encoding" => 'utf8',
-    "username" => 'postgres',
-    "password" => 'postgres',
+    "username" => ENV["PGUSER"] || 'postgres',
+    "password" => ENV["PGPASSWORD"] || 'postgres',
   },
 }
 
