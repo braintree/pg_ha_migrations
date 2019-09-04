@@ -31,7 +31,6 @@ module PgHaMigrations::UnsafeStatements
     end
   end
 
-  delegate_unsafe_method_to_migration_base_class :create_table
   delegate_unsafe_method_to_migration_base_class :add_column
   delegate_unsafe_method_to_migration_base_class :change_table
   delegate_unsafe_method_to_migration_base_class :drop_table
@@ -57,6 +56,14 @@ module PgHaMigrations::UnsafeStatements
   disable_or_delegate_default_method :execute, ":execute is NOT SAFE! Explicitly call :unsafe_execute to proceed", allow_reentry_from_compatibility_module: true
   disable_or_delegate_default_method :remove_index, ":remove_index is NOT SAFE! Use safe_remove_concurrent_index instead for Postgres 9.6 databases; Explicitly call :unsafe_remove_index to proceed on Postgres 9.1"
   disable_or_delegate_default_method :add_foreign_key, ":add_foreign_key is NOT SAFE! Explicitly call :unsafe_add_foreign_key only if you have guidance from a migration reviewer in #service-app-db."
+
+  def unsafe_create_table(table, options={}, &block)
+    if options[:force] && !PgHaMigrations.config.allow_force_create_table
+      raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
+    end
+
+    execute_ancestor_statement(:create_table, table, options, &block)
+  end
 
   def execute_ancestor_statement(method_name, *args, &block)
     # Dispatching here is a bit complicated: we need to execute the method

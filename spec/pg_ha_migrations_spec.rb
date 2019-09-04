@@ -41,6 +41,20 @@ RSpec.describe PgHaMigrations do
         expect(PgHaMigrations.config.check_for_dependent_objects).to be(true)
       end
     end
+
+    context "allow_force_create_table" do
+      it "is set to true by default" do
+        expect(PgHaMigrations.config.allow_force_create_table).to be(true)
+      end
+
+      it "can be overriden to false" do
+        PgHaMigrations.configure do |config|
+          config.allow_force_create_table = false
+        end
+
+        expect(PgHaMigrations.config.allow_force_create_table).to be(false)
+      end
+    end
   end
 
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
