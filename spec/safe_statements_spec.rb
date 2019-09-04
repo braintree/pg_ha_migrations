@@ -508,12 +508,26 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(5)
           end
 
-          it "sets default value to the result of an expression when the expression is a string" do
+          it "raises a helpful error if the default value string can't be cast to a non-null value of the column's datatype" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
                 safe_add_column :foos, :bar, :timestamp
                 safe_change_column_default :foos, :bar, 'NOW()'
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, /default value.+<NOW\(\)>.+but.+NULL/)
+          end
+
+          it "sets default value to the result of an expression when a Proc resolves to a quoted string" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                safe_add_column :foos, :bar, :timestamp
+                safe_change_column_default :foos, :bar, -> { "'NOW()'" }
               end
             end
 
@@ -528,7 +542,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(foo_class.first.bar).to be_kind_of(Time)
           end
 
-          it "sets default value to the result of an expression when the expression is a Proc" do
+          it "sets default value to an expression when a Proc resolves to an expression string" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
@@ -552,6 +566,36 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
             ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
             expect(foo_class.first.bar).to be_kind_of(Time)
+          end
+
+          it "drops the default if changing to nil" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :timestamp, default: Time.now
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            # Verify setup.
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to be_present
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_change_column_default :foos, :bar, nil
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            default_value = ActiveRecord::Base.connection.select_value <<-SQL
+              SELECT adsrc
+              FROM pg_attrdef
+              JOIN pg_attribute ON adnum = attnum AND adrelid = attrelid
+              WHERE attname = 'bar' AND attrelid = 'foos'::regclass
+            SQL
+            expect(default_value).to be_nil
           end
         end
 

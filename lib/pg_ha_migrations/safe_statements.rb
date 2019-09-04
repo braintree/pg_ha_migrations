@@ -38,20 +38,17 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def safe_change_column_default(table, column, default_value)
-    escaped_value = case default_value
-    when Proc
-      PG::Connection.escape_string(default_value.call.to_s)
-    else
-      "'#{PG::Connection.escape_string(default_value.to_s)}'"
+  def safe_change_column_default(table_name, column_name, default_value)
+    column = connection.send(:column_for, table_name, column_name)
+
+    if default_value.present? &&
+       !default_value.is_a?(Proc) &&
+       quote_default_expression(default_value, column) == "NULL"
+      raise PgHaMigrations::InvalidMigrationError, "Requested new default value of <#{default_value}>, but that casts to NULL for the type <#{column.type}>. Did you mean to you mean to use a Proc instead?"
     end
 
-    safely_acquire_lock_for_table(table) do
-      unsafe_execute <<-SQL.strip_heredoc
-        ALTER TABLE #{PG::Connection.quote_ident(table.to_s)}
-        ALTER COLUMN #{PG::Connection.quote_ident(column.to_s)}
-        SET DEFAULT #{escaped_value}
-      SQL
+    safely_acquire_lock_for_table(table_name) do
+      unsafe_change_column_default(table_name, column_name, default_value)
     end
   end
 
