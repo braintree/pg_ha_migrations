@@ -55,7 +55,7 @@ module PgHaMigrations::UnsafeStatements
   disable_or_delegate_default_method :add_index, ":add_index is NOT SAFE! Use safe_add_concurrent_index instead"
   disable_or_delegate_default_method :execute, ":execute is NOT SAFE! Explicitly call :unsafe_execute to proceed", allow_reentry_from_compatibility_module: true
   disable_or_delegate_default_method :remove_index, ":remove_index is NOT SAFE! Use safe_remove_concurrent_index instead for Postgres 9.6 databases; Explicitly call :unsafe_remove_index to proceed on Postgres 9.1"
-  disable_or_delegate_default_method :add_foreign_key, ":add_foreign_key is NOT SAFE! Explicitly call :unsafe_add_foreign_key only if you have guidance from a migration reviewer in #service-app-db."
+  disable_or_delegate_default_method :add_foreign_key, ":add_foreign_key is NOT SAFE! Explicitly call :unsafe_add_foreign_key"
 
   def unsafe_create_table(table, options={}, &block)
     if options[:force] && !PgHaMigrations.config.allow_force_create_table

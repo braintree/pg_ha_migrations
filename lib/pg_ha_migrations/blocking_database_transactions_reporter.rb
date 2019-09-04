@@ -29,9 +29,7 @@ module PgHaMigrations
                      migrations in this deploy that will attempt to create additional
                      concurrent indexes on the same physical database (even if the table
                      being indexes is on another dimension) those migrations will not be
-                     able to complete until the in-progress index creations finish.
-
-                     For more information, see #service-db in Slack.\n
+                     able to complete until the in-progress index creations finish.\n
           eos
           report << "\n" # Blank line intentional
         end
