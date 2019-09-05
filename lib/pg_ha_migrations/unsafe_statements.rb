@@ -37,6 +37,7 @@ module PgHaMigrations::UnsafeStatements
   delegate_unsafe_method_to_migration_base_class :rename_table
   delegate_unsafe_method_to_migration_base_class :rename_column
   delegate_unsafe_method_to_migration_base_class :change_column
+  delegate_unsafe_method_to_migration_base_class :change_column_default
   delegate_unsafe_method_to_migration_base_class :remove_column
   delegate_unsafe_method_to_migration_base_class :add_index
   delegate_unsafe_method_to_migration_base_class :execute
@@ -50,6 +51,7 @@ module PgHaMigrations::UnsafeStatements
   disable_or_delegate_default_method :rename_table, ":rename_table is NOT SAFE! Explicitly call :unsafe_rename_table to proceed"
   disable_or_delegate_default_method :rename_column, ":rename_column is NOT SAFE! Explicitly call :unsafe_rename_column to proceed"
   disable_or_delegate_default_method :change_column, ":change_column is NOT SAFE! Use a combination of safe and explicit unsafe migration methods instead"
+  disable_or_delegate_default_method :change_column_default, ":change_column_default is NOT SAFE! Use safe_change_column_default instead"
   disable_or_delegate_default_method :change_column_null, ":change_column_null is NOT (guaranteed to be) SAFE! Either use :safe_make_column_nullable or explicitly call :unsafe_make_column_not_nullable to proceed"
   disable_or_delegate_default_method :remove_column, ":remove_column is NOT SAFE! Explicitly call :unsafe_remove_column to proceed"
   disable_or_delegate_default_method :add_index, ":add_index is NOT SAFE! Use safe_add_concurrent_index instead"
