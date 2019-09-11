@@ -61,7 +61,6 @@ module PgHaMigrations::UnsafeStatements
   disable_or_delegate_default_method :add_foreign_key, ":add_foreign_key is NOT SAFE! Explicitly call :unsafe_add_foreign_key"
   disable_or_delegate_default_method :remove_foreign_key, ":remove_foreign_key is NOT SAFE! Explicitly call :unsafe_remove_foreign_key"
 
-
   def unsafe_create_table(table, options={}, &block)
     if options[:force] && !PgHaMigrations.config.allow_force_create_table
       raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
