@@ -98,6 +98,14 @@ module PgHaMigrations::SafeStatements
     raise PgHaMigrations::UnsupportedAdapter, "This gem only works with the #{expected_adapter} adapter, found #{actual_adapter} instead" unless actual_adapter == expected_adapter
   end
 
+  def migrate(direction)
+    if respond_to?(:change)
+      raise PgHaMigrations::UnsupportedMigrationError, "Tracking changes for automated rollback is not supported; use explicit #up instead."
+    end
+
+    super(direction)
+  end
+
   def exec_migration(conn, direction)
     _check_postgres_adapter!
     super(conn, direction)
