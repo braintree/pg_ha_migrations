@@ -58,6 +58,24 @@ RSpec.describe PgHaMigrations do
   end
 
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
+    describe "general tests for #{migration_klass.name}" do
+      it "disallows using the #change method on migrations" do
+        subclass = Class.new(migration_klass) do
+          def change
+            # Do nothing.
+          end
+        end
+
+        expect do
+          subclass.migrate(:up)
+        end.to raise_error(PgHaMigrations::UnsupportedMigrationError)
+
+        expect do
+          subclass.migrate(:down)
+        end.to raise_error(PgHaMigrations::UnsupportedMigrationError)
+      end
+    end
+
     describe "interaction with ActiveRecord::Migration::Compatibility inheritance hierarchy with #{migration_klass.name}" do
       let(:subclass) { Class.new(migration_klass) }
 

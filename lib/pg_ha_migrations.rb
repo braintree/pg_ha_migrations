@@ -35,6 +35,10 @@ module PgHaMigrations
   # as expected or get the schema into an inconsistent state
   InvalidMigrationError = Class.new(Exception)
 
+  # Unsupported migrations use ActiveRecord::Migration features that
+  # we don't support, and therefore will likely have unexpected behavior.
+  UnsupportedMigrationError = Class.new(Exception)
+
   # This gem only supports the PostgreSQL adapter at this time.
   UnsupportedAdapter = Class.new(Exception)
 end
