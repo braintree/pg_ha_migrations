@@ -1,4 +1,5 @@
 require 'stringio'
+require 'active_support/core_ext/string/strip'
 
 module PgHaMigrations
   class BlockingDatabaseTransactionsReporter
