@@ -512,35 +512,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "safe_add_column" do
-          it "allows setting a default" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-                safe_add_column :foos, :bar, :text, :default => "baz"
-              end
-            end
-            
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq("baz")
-
-            ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
-            expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
-          end
-
-          it "allows setting null => false" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-                safe_add_column :foos, :bar, :text, :null => false
-              end
-            end
-
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
-          end
-
           it "add column of default is not set" do
             migration = Class.new(migration_klass) do
               def up
@@ -554,11 +525,46 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("bar")
           end
 
-          context 'with a version before 11' do
+          context 'with Postgres 11+' do
             before do
-              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(100000)
+              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(11_00_00)
             end
-            
+
+            it "allows setting a default" do
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_create_table :foos
+                  safe_add_column :foos, :bar, :text, :default => "baz"
+                end
+              end
+              
+              migration.suppress_messages { migration.migrate(:up) }
+
+              expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq("baz")
+
+              ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+              expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
+            end
+
+            it "allows setting null => false" do
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_create_table :foos
+                  safe_add_column :foos, :bar, :text, :null => false
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
+            end
+          end
+
+          context 'with Postgres <=9.6' do
+            before do
+              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
+            end
+
             it "forbids setting a default" do
               migration = Class.new(migration_klass) do
                 def up
@@ -912,7 +918,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises if connecting to Postgres 9.1 databases" do
-            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(90112)
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_01_12)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -983,7 +989,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           let(:migration) { Class.new(migration_klass).new }
 
           before(:each) do
-            skip "Only relevant on Postgres 9.3+" unless ActiveRecord::Base.connection.postgresql_version >= 90300
+            skip "Only relevant on Postgres 9.3+" unless ActiveRecord::Base.connection.postgresql_version >= 9_03_00
 
             ActiveRecord::Base.connection.execute("CREATE TABLE #{table_name}(pk SERIAL, i INTEGER)")
           end
@@ -1268,7 +1274,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "uses statement_timeout instead of lock_timeout when on Postgres 9.1" do
-              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(90112)
+              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_01_12)
               expect do
                 migration.safely_acquire_lock_for_table(table_name) do
                   expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
