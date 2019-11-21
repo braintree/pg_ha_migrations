@@ -512,20 +512,23 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "safe_add_column" do
-          it "forbids setting a default" do
+          it "allows setting a default" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :text, :default => ""
+                safe_add_column :foos, :bar, :text, :default => "baz"
               end
             end
+            
+            migration.suppress_messages { migration.migrate(:up) }
 
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error PgHaMigrations::UnsafeMigrationError
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq("baz")
+
+            ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+            expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
           end
 
-          it "forbids setting null => false" do
+          it "allows setting null => false" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
@@ -533,9 +536,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error PgHaMigrations::UnsafeMigrationError
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
           end
 
           it "add column of default is not set" do
