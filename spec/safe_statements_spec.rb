@@ -512,7 +512,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "safe_add_column" do
-          it "add column of default is not set" do
+          it "add column without a default" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
