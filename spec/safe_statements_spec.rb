@@ -525,6 +525,19 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("bar")
           end
 
+          it "forbids setting a default to a dynamic function" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                safe_add_column :foos, :bar, :text, :default => "clock_timestamp()"
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error PgHaMigrations::UnsafeMigrationError
+          end
+
           context 'with Postgres 11+' do
             before do
               allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(11_00_00)

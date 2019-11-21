@@ -26,6 +26,10 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_add_column(table, column, type, options = {})
+    if options.has_key?(:default) && options[:default].include?("(")
+      raise PgHaMigrations::UnsafeMigrationError.new(":default is NOT SAFE! Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
+    end
+
     unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
       if options.has_key? :default
         raise PgHaMigrations::UnsafeMigrationError.new(":default is NOT SAFE! Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
