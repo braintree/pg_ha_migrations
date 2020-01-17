@@ -587,18 +587,80 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(5)
           end
 
-          it "raises a helpful error if the default value string can't be cast to a non-null value of the column's datatype" do
-            migration = Class.new(migration_klass) do
+          it "raises a helpful error if the default expression passed as a string results in setting the default to NULL" do
+            setup_migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
                 safe_add_column :foos, :bar, :timestamp
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            migration = Class.new(migration_klass) do
+              def up
                 safe_change_column_default :foos, :bar, 'NOW()'
               end
             end
 
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, /default value.+<NOW\(\)>.+but.+NULL/)
+            # Only run the expectations if the version of Rails we're running
+            # against is vulnerable to this particular edge case confusion
+            # (we want to guard based on behavior not version, since this
+            # behavior seems to be incidental and could in theory appear in
+            # an arbitrary set of versions).
+            ActiveRecord::Base.connection.change_column_default(:foos, :bar, 'NOW()')
+            default_value = ActiveRecord::Base.value_from_sql <<~SQL
+              SELECT adsrc
+              FROM pg_attrdef
+              WHERE adrelid = 'foos'::regclass AND adnum = (
+                SELECT attnum
+                FROM pg_attribute
+                WHERE attrelid = 'foos'::regclass AND attname = 'bar'
+              )
+            SQL
+            if default_value.nil? || (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR == 2)
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, /expression using a string literal is ambiguous/)
+            end
+          end
+
+          it "raises a helpful error if the default expression passed as a string results in setting the default to the constant result of evaluating the expression" do
+            pending "There's not currently a good way to (at runtime) determine if we're encountering this edge case." if (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR <= 1)
+
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                safe_add_column :foos, :bar, :timestamp
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_change_column_default :foos, :bar, 'NOW()'
+              end
+            end
+
+            # Only run the expectations if the version of Rails we're running
+            # against is vulnerable to this particular edge case confusion
+            # (we want to guard based on behavior not version, since this
+            # behavior seems to be incidental and could in theory appear in
+            # an arbitrary set of versions).
+            ActiveRecord::Base.connection.change_column_default(:foos, :bar, 'NOW()')
+            default_value = ActiveRecord::Base.value_from_sql <<~SQL
+              SELECT adsrc
+              FROM pg_attrdef
+              WHERE adrelid = 'foos'::regclass AND adnum = (
+                SELECT attnum
+                FROM pg_attribute
+                WHERE attrelid = 'foos'::regclass AND attname = 'bar'
+              )
+            SQL
+            if default_value =~ /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/ || (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR <= 1)
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, /expression using a string literal is ambiguous/)
+            end
           end
 
           it "sets default value to the result of an expression when a Proc resolves to a quoted string" do

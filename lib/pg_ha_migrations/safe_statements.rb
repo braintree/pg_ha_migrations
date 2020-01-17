@@ -45,10 +45,36 @@ module PgHaMigrations::SafeStatements
   def safe_change_column_default(table_name, column_name, default_value)
     column = connection.send(:column_for, table_name, column_name)
 
+    # In 5.2 we have an edge whereby passing in a string literal with an expression
+    # results in confusing behavior because instead of being executed in the database
+    # that expression is turned into a Ruby nil before being sent to the database layer;
+    # this seems to be an expected side effect of a change that was targeted at a use
+    # case unrelated to migrations: https://github.com/rails/rails/commit/7b2dfdeab6e4ef096e4dc1fe313056f08ccf7dc5
+    #
+    # On the other hand, the behavior in 5.1 is also confusing because it quotes the
+    # expression (instead of maintaining the string as-is), which results in Postgres
+    # evaluating the expression once when executing the DDL and setting the default to
+    # the constant result of that evaluation rather than setting the default to the
+    # expression itself.
+    #
+    # Therefore we want to disallow passing in an expression directly as a string and
+    # require the use of a Proc instead with specific quoting rules to determine exact
+    # behavior, but unfortunately without relying on something like the PgQuery gem
+    # (which requires native extensions built with the Postgres dev packages installed)
+    # we don't have an way to determine if a string literal represent an expression or
+    # just a constant. So we are able to check for and raise an error in the 5.2
+    # behavior of unexpected casting to NULL, but we are not able to check for and
+    # raise an error in the 5.1 behavior of unexpectedly casting to a constant.
     if default_value.present? &&
        !default_value.is_a?(Proc) &&
        quote_default_expression(default_value, column) == "NULL"
-      raise PgHaMigrations::InvalidMigrationError, "Requested new default value of <#{default_value}>, but that casts to NULL for the type <#{column.type}>. Did you mean to you mean to use a Proc instead?"
+      raise PgHaMigrations::InvalidMigrationError, <<~ERROR
+        Setting a default value to an expression using a string literal is ambiguous.
+
+        If you want the default to be:
+        * ...an expression evaluated at runtime for each row, then pass a Proc that returns the expression string (e.g., `-> { "NOW()" }`).
+        * ...an expression evaluated at migration time, then pass a Proc that returns a quoted expression string (e.g., `-> { "'NOW()'" }`).
+      ERROR
     end
 
     safely_acquire_lock_for_table(table_name) do
