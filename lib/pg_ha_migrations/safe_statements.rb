@@ -114,6 +114,66 @@ module PgHaMigrations::SafeStatements
     unsafe_execute("SET maintenance_work_mem = '#{PG::Connection.escape_string(gigabytes.to_s)} GB'")
   end
 
+  def safe_add_unvalidated_check_constraint(table, expression, name:)
+    unsafe_add_check_constraint(table, expression, name: name, validate: false)
+  end
+
+  def unsafe_add_check_constraint(table, expression, name:, validate: true)
+    raise ArgumentError, "Expected <name> to be present" unless name.present?
+
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_constraint_name = connection.quote_table_name(name)
+    sql = "ALTER TABLE #{quoted_table_name} ADD CONSTRAINT #{quoted_constraint_name} CHECK (#{expression}) #{validate ? "" : "NOT VALID"}"
+
+    safely_acquire_lock_for_table(table) do
+      say_with_time "add_check_constraint(#{table.inspect}, #{expression.inspect}, name: #{name.inspect}, validate: #{validate.inspect})" do
+        connection.execute(sql)
+      end
+    end
+  end
+
+  def safe_validate_check_constraint(table, name:)
+    raise ArgumentError, "Expected <name> to be present" unless name.present?
+
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_constraint_name = connection.quote_table_name(name)
+    sql = "ALTER TABLE #{quoted_table_name} VALIDATE CONSTRAINT #{quoted_constraint_name}"
+
+    say_with_time "validate_check_constraint(#{table.inspect}, name: #{name.inspect})" do
+      connection.execute(sql)
+    end
+  end
+
+  def safe_rename_constraint(table, from:, to:)
+    raise ArgumentError, "Expected <from> to be present" unless from.present?
+    raise ArgumentError, "Expected <to> to be present" unless to.present?
+
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_constraint_from_name = connection.quote_table_name(from)
+    quoted_constraint_to_name = connection.quote_table_name(to)
+    sql = "ALTER TABLE #{quoted_table_name} RENAME CONSTRAINT #{quoted_constraint_from_name} TO #{quoted_constraint_to_name}"
+
+    safely_acquire_lock_for_table(table) do
+      say_with_time "rename_constraint(#{table.inspect}, from: #{from.inspect}, to: #{to.inspect})" do
+        connection.execute(sql)
+      end
+    end
+  end
+
+  def unsafe_remove_constraint(table, name:)
+    raise ArgumentError, "Expected <name> to be present" unless name.present?
+
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_constraint_name = connection.quote_table_name(name)
+    sql = "ALTER TABLE #{quoted_table_name} DROP CONSTRAINT #{quoted_constraint_name}"
+
+    safely_acquire_lock_for_table(table) do
+      say_with_time "remove_constraint(#{table.inspect}, name: #{name.inspect})" do
+        connection.execute(sql)
+      end
+    end
+  end
+
   def _per_migration_caller
     @_per_migration_caller ||= Kernel.caller
   end

@@ -168,6 +168,37 @@ Safely remove an index. Migrations that contain this statement must also include
 safe_remove_concurrent_index :table, :name => :index_name
 ```
 
+#### safe\_add\_unvalidated\_check\_constraint
+
+Safely add a `CHECK` constraint. The constraint will not be immediately validated on existing rows to avoid a full table scan while holding an exclusive lock. After adding the constraint, you'll need to use `safe_validate_check_constraint` to validate existing rows.
+
+```ruby
+safe_add_unvalidated_check_constraint :table, "column LIKE 'example%'", name: :constraint_table_on_column_like_example
+```
+
+#### safe\_validate\_check\_constraint
+
+Safely validate (without acquiring an exclusive lock) existing rows for a newly added but as-yet unvalidated `CHECK` constraint.
+
+```ruby
+safe_validate_check_constraint :table, name: :constraint_table_on_column_like_example
+```
+
+#### safe\_rename\_constraint
+
+Safely rename any (not just `CHECK`) constraint.
+
+```ruby
+safe_rename_constraint :table, from: :constraint_table_on_column_like_typo, to: :constraint_table_on_column_like_example
+```
+
+#### unsafe\_remove\_constraint
+
+Drop any (not just `CHECK`) constraint.
+
+```ruby
+unsafe_remove_constraint :table, name: :constraint_table_on_column_like_example
+```
 
 ### Utilities
 
