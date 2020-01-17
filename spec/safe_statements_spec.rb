@@ -1,6 +1,21 @@
 require "spec_helper"
 
 RSpec.describe PgHaMigrations::SafeStatements do
+  TableLock = Struct.new(:table, :lock_type, :granted)
+  def locks_for_table(table, connection:)
+    values = connection.execute(<<-SQL)
+      SELECT pg_class.relname AS table, pg_locks.mode AS lock_type, granted
+      FROM pg_locks
+      JOIN pg_class ON pg_locks.relation = pg_class.oid
+      WHERE pid IS DISTINCT FROM pg_backend_pid()
+        AND pg_class.relkind = 'r'
+        AND pg_class.relname = '#{table}'
+    SQL
+    values.to_a.map do |hash|
+      TableLock.new(hash["table"], hash["lock_type"], hash["granted"])
+    end
+  end
+
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
     describe migration_klass do
       it "can be used as a migration class" do
@@ -1057,6 +1072,398 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "#safe_add_unvalidated_check_constraint" do
+          before(:each) do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "adds a CHECK constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_unvalidated_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /ALTER TABLE .+ ADD CONSTRAINT/, count: 1)
+
+            constraint_name, constraint_validated, constraint_expression = ActiveRecord::Base.tuple_from_sql <<~SQL
+              SELECT conname, convalidated, consrc
+              FROM pg_constraint
+              WHERE conrelid = 'foos'::regclass AND contype != 'p'
+            SQL
+
+            expect(constraint_name).to eq("constraint_foo_bar_is_not_null")
+            expect(constraint_expression).to eq("(bar IS NOT NULL)")
+          end
+
+          it "raises a helpful error if a name is not passed" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_unvalidated_check_constraint :foos, "bar IS NOT NULL", :name => nil
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <name> to be present")
+          end
+
+          it "does not validate the constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_unvalidated_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            constraint_validated = ActiveRecord::Base.value_from_sql <<~SQL
+              SELECT convalidated
+              FROM pg_constraint
+              WHERE conname = 'constraint_foo_bar_is_not_null'
+            SQL
+
+            expect(constraint_validated).to eq(false)
+          end
+
+          it "outputs the operation" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_unvalidated_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to output(/add_check_constraint\(:foos, "bar IS NOT NULL", name: :constraint_foo_bar_is_not_null, validate: false\)/m).to_stdout
+          end
+        end
+
+        describe "#unsafe_add_check_constraint" do
+          before(:each) do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "adds a CHECK constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /ALTER TABLE .+ ADD CONSTRAINT/, count: 1)
+
+            constraint_name, constraint_validated, constraint_expression = ActiveRecord::Base.tuple_from_sql <<~SQL
+              SELECT conname, convalidated, consrc
+              FROM pg_constraint
+              WHERE conrelid = 'foos'::regclass AND contype != 'p'
+            SQL
+
+            expect(constraint_name).to eq("constraint_foo_bar_is_not_null")
+            expect(constraint_expression).to eq("(bar IS NOT NULL)")
+          end
+
+          it "raises a helpful error if a name is not passed" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => nil
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <name> to be present")
+          end
+
+          it "defaults to validating the constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            constraint_validated = ActiveRecord::Base.value_from_sql <<~SQL
+              SELECT convalidated
+              FROM pg_constraint
+              WHERE conname = 'constraint_foo_bar_is_not_null'
+            SQL
+
+            expect(constraint_validated).to eq(true)
+          end
+
+          it "optionally creates the constraint as NOT VALID" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null, :validate => false
+              end
+            end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            constraint_validated = ActiveRecord::Base.value_from_sql <<~SQL
+              SELECT convalidated
+              FROM pg_constraint
+              WHERE conname = 'constraint_foo_bar_is_not_null'
+            SQL
+
+            expect(constraint_validated).to eq(false)
+          end
+
+          it "outputs the operation" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to output(/add_check_constraint\(:foos, "bar IS NOT NULL", name: :constraint_foo_bar_is_not_null, validate: true\)/m).to_stdout
+          end
+        end
+
+        describe "#safe_validate_check_constraint" do
+          before(:each) do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+                safe_add_unvalidated_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "validates an existing CHECK constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_validate_check_constraint :foos, :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /ALTER TABLE .+ VALIDATE CONSTRAINT/, count: 1)
+              .and(change do
+                ActiveRecord::Base.value_from_sql <<~SQL
+                  SELECT convalidated
+                  FROM pg_constraint
+                  WHERE conname = 'constraint_foo_bar_is_not_null'
+                SQL
+              end.from(false).to(true))
+          end
+
+          it "raises a helpful error if a name is not passed" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_validate_check_constraint :foos, :name => nil
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <name> to be present")
+          end
+
+          it "doesn't acquire a lock which prevents concurrent reads and writes" do
+            alternate_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(ActiveRecord::Base.connection_pool.spec)
+            alternate_connection = alternate_connection_pool.connection
+
+            alternate_connection.execute("BEGIN")
+            alternate_connection.execute("LOCK TABLE foos")
+
+            begin
+              test_migration = Class.new(migration_klass) do
+                def up
+                  safe_validate_check_constraint :foos, :name => :constraint_foo_bar_is_not_null
+                end
+              end
+
+              migration_thread = Thread.new do
+                test_migration.suppress_messages { test_migration.migrate(:up) }
+              end
+
+              waiting_locks = []
+              sleep_counter = 0
+              until waiting_locks.present? || sleep_counter >= 5
+                waiting_locks = locks_for_table(:foos, connection: alternate_connection).select { |l| !l.granted }
+                sleep 1
+              end
+
+              alternate_connection.execute("ROLLBACK")
+
+              expect(waiting_locks.size).to eq(1)
+              # According to https://www.postgresql.org/docs/current/explicit-locking.html
+              # ALTER TABLE VALIDATE CONSTRAINT... should aquire a SHARE UPDATE EXCLUSIVE
+              # lock type which does not conflict, for example, with ROW EXCLUSIVE which
+              # is generally acquired by anything modifying data in a table.
+              expect(waiting_locks[0].lock_type).to eq("ShareUpdateExclusiveLock")
+
+              migration_thread.join
+            ensure
+              alternate_connection_pool.disconnect!
+            end
+          end
+
+          it "outputs the operation" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_validate_check_constraint :foos, :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to output(/validate_check_constraint\(:foos, name: :constraint_foo_bar_is_not_null\)/m).to_stdout
+          end
+        end
+
+        describe "#safe_rename_constraint" do
+          before(:each) do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "renames the constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_rename_constraint :foos, :from => :constraint_foo_bar_is_not_null, :to => :other_comstraint
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /ALTER TABLE .+ RENAME CONSTRAINT/, count: 1)
+              .and(
+                change do
+                  ActiveRecord::Base.value_from_sql <<~SQL
+                    SELECT conname
+                    FROM pg_constraint
+                    WHERE conrelid = 'foos'::regclass AND contype != 'p'
+                  SQL
+                end.from("constraint_foo_bar_is_not_null").to("other_comstraint")
+              )
+          end
+
+          it "raises a helpful error if a from name is not passed" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_rename_constraint :foos, :from => nil, :to => :other_comstraint
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <from> to be present")
+          end
+
+          it "raises a helpful error if a to name is not passed" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_rename_constraint :foos, :from => :constraint_foo_bar_is_not_null, :to => nil
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <to> to be present")
+          end
+
+          it "outputs the operation" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_rename_constraint :foos, :from => :constraint_foo_bar_is_not_null, :to => :other_constraint
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to output(/rename_constraint\(:foos, from: :constraint_foo_bar_is_not_null, to: :other_constraint\)/m).to_stdout
+          end
+        end
+
+        describe "#unsafe_remove_constraint" do
+          before(:each) do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "drop the constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /ALTER TABLE .+ DROP CONSTRAINT/, count: 1)
+              .and(
+                change do
+                  ActiveRecord::Base.pluck_from_sql <<~SQL
+                    SELECT conname
+                    FROM pg_constraint
+                    WHERE conrelid = 'foos'::regclass AND contype != 'p'
+                  SQL
+                end.from(["constraint_foo_bar_is_not_null"]).to([])
+              )
+          end
+
+          it "raises a helpful error if a name is not passed" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => nil
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <name> to be present")
+          end
+
+          it "outputs the operation" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to output(/remove_constraint\(:foos, name: :constraint_foo_bar_is_not_null\)/m).to_stdout
+          end
+        end
+
         describe "#adjust_lock_timeout" do
           let(:table_name) { "bogus_table" }
           let(:migration) { Class.new(migration_klass).new }
@@ -1180,7 +1587,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
               alternate_connection_pool.connection
             end
             let(:migration) { Class.new(migration_klass).new }
-            let(:table_lock_struct) { Struct.new(:table, :lock_type) }
 
             before(:each) do
               ActiveRecord::Base.connection.execute("CREATE TABLE #{table_name}(pk SERIAL, i INTEGER)")
@@ -1188,20 +1594,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             after(:each) do
               alternate_connection_pool.disconnect!
-            end
-
-            def locks_for_table(table, connection:)
-              values = connection.execute(<<-SQL)
-                SELECT pg_class.relname AS table, pg_locks.mode AS lock_type
-                FROM pg_locks
-                JOIN pg_class ON pg_locks.relation = pg_class.oid
-                WHERE pid IS DISTINCT FROM pg_backend_pid()
-                  AND pg_class.relkind = 'r'
-                  AND pg_class.relname = '#{table}'
-              SQL
-              values.to_a.map do |hash|
-                table_lock_struct.new(hash["table"], hash["lock_type"])
-              end
             end
 
             it "executes the block" do
@@ -1212,7 +1604,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             it "acquires an exclusive lock on the table" do
               migration.safely_acquire_lock_for_table(table_name) do
-                expect(locks_for_table(table_name, connection: alternate_connection)).to eq([table_lock_struct.new(table_name.to_s, "AccessExclusiveLock")])
+                expect(locks_for_table(table_name, connection: alternate_connection)).to eq([TableLock.new(table_name.to_s, "AccessExclusiveLock", true)])
               end
             end
 
