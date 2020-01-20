@@ -939,7 +939,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises if connecting to Postgres 9.1 databases" do
-            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(90112)
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_01_12)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -1010,7 +1010,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           let(:migration) { Class.new(migration_klass).new }
 
           before(:each) do
-            skip "Only relevant on Postgres 9.3+" unless ActiveRecord::Base.connection.postgresql_version >= 90300
+            skip "Only relevant on Postgres 9.3+" unless ActiveRecord::Base.connection.postgresql_version >= 9_03_00
 
             ActiveRecord::Base.connection.execute("CREATE TABLE #{table_name}(pk SERIAL, i INTEGER)")
           end
@@ -1295,7 +1295,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "uses statement_timeout instead of lock_timeout when on Postgres 9.1" do
-              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(90112)
+              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_01_12)
               expect do
                 migration.safely_acquire_lock_for_table(table_name) do
                   expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
