@@ -76,7 +76,7 @@ module PgHaMigrations::SafeStatements
     unless options.is_a?(Hash) && options.key?(:name)
       raise ArgumentError, "Expected safe_remove_concurrent_index to be called with arguments (table_name, :name => ...)"
     end
-    unless ActiveRecord::Base.connection.postgresql_version >= 90600
+    unless ActiveRecord::Base.connection.postgresql_version >= 9_06_00
       raise PgHaMigrations::InvalidMigrationError, "Removing an index concurrently is not supported on Postgres 9.1 databases"
     end
     index_size = select_value("SELECT pg_size_pretty(pg_relation_size('#{options[:name]}'))")
@@ -123,7 +123,7 @@ module PgHaMigrations::SafeStatements
       end
 
       connection.transaction do
-        adjust_timeout_method = connection.postgresql_version >= 90300 ? :adjust_lock_timeout : :adjust_statement_timeout
+        adjust_timeout_method = connection.postgresql_version >= 9_03_00 ? :adjust_lock_timeout : :adjust_statement_timeout
         begin
           method(adjust_timeout_method).call(PgHaMigrations::LOCK_TIMEOUT_SECONDS) do
             connection.execute("LOCK #{quoted_table_name};")
