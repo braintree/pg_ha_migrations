@@ -31,7 +31,7 @@ module PgHaMigrations::SafeStatements
     end
 
     unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-      if options.has_key? :default
+      if options.has_key?(:default)
         raise PgHaMigrations::UnsafeMigrationError.new(":default is NOT SAFE! Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
       end
       if options[:null] == false
