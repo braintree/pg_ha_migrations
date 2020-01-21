@@ -509,6 +509,18 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
           end
+
+          it "doesn't output say_with_time for adapter_name" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :items
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to_not output(/adapter_name/m).to_stdout
+          end
         end
 
         describe "safe_add_column" do
