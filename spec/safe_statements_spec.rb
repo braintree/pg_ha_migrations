@@ -750,6 +750,27 @@ RSpec.describe PgHaMigrations::SafeStatements do
             SQL
             expect(default_value).to be_nil
           end
+
+          it "doesn't output say_with_time for quote_default_expression" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_change_column_default :foos, :bar, "test"
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to_not output(/quote_default_expression/m).to_stdout
+          end
         end
 
         describe "safe_make_column_nullable" do

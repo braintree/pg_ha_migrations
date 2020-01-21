@@ -19,4 +19,11 @@ module PgHaMigrations
   end
 end
 
-ActiveRecord::Migration::Compatibility::V5_2.prepend(PgHaMigrations::ActiveRecordHacks::CleanupUnnecessaryOutput)
+patchable_module = [
+ defined?(ActiveRecord::Migration::Compatibility::V5_2) ? ActiveRecord::Migration::Compatibility::V5_2 : nil,
+ defined?(ActiveRecord::Migration::Compatibility::V5_1) ? ActiveRecord::Migration::Compatibility::V5_1 : nil,
+ defined?(ActiveRecord::Migration::Compatibility::V5_0) ? ActiveRecord::Migration::Compatibility::V5_0 : nil,
+].detect { |m| m }
+if patchable_module
+  patchable_module.prepend(PgHaMigrations::ActiveRecordHacks::CleanupUnnecessaryOutput)
+end

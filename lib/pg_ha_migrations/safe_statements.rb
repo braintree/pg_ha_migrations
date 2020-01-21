@@ -67,7 +67,7 @@ module PgHaMigrations::SafeStatements
     # raise an error in the 5.1 behavior of unexpectedly casting to a constant.
     if default_value.present? &&
        !default_value.is_a?(Proc) &&
-       quote_default_expression(default_value, column) == "NULL"
+       connection.quote_default_expression(default_value, column) == "NULL"
       raise PgHaMigrations::InvalidMigrationError, <<~ERROR
         Setting a default value to an expression using a string literal is ambiguous.
 
