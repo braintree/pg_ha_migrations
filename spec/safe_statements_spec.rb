@@ -599,6 +599,27 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(5)
           end
 
+          [:string, :text, :binary].each do |type|
+            it "allows a value that looks like an expression for the #{type.inspect} type" do
+              migration = Class.new(migration_klass) do
+                define_method(:up) do
+                  unsafe_create_table :foos
+                  safe_add_column :foos, :bar, type
+                  safe_change_column_default :foos, :bar, 'NOW()'
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              # Handle binary columns being transported, but not stored, as hex.
+              expected_value = type == :binary ? "\\x4e4f572829" : "NOW()"
+              expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq(expected_value)
+
+              ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+              expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(expected_value)
+            end
+          end
+
           it "raises a helpful error if the default expression passed as a string results in setting the default to NULL" do
             setup_migration = Class.new(migration_klass) do
               def up
@@ -637,8 +658,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises a helpful error if the default expression passed as a string results in setting the default to the constant result of evaluating the expression" do
-            pending "There's not currently a good way to (at runtime) determine if we're encountering this edge case." if (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR <= 1)
-
             setup_migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
