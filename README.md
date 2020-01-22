@@ -127,7 +127,13 @@ unsafe_add_column :table, :column, :type
 Safely change the default value for a column.
 
 ```ruby
+# Constant value:
 safe_change_column_default :table, :column, "value"
+safe_change_column_default :table, :column, DateTime.new(...)
+# Functional expression evaluated at row insert time:
+safe_change_column_default :table, :column, -> { "NOW()" }
+# Functional expression evaluated at migration time:
+safe_change_column_default :table, :column, -> { "'NOW()'" }
 ```
 
 #### safe\_make\_column\_nullable

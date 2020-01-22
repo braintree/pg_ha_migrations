@@ -59,19 +59,34 @@ module PgHaMigrations::SafeStatements
     #
     # Therefore we want to disallow passing in an expression directly as a string and
     # require the use of a Proc instead with specific quoting rules to determine exact
-    # behavior, but unfortunately without relying on something like the PgQuery gem
-    # (which requires native extensions built with the Postgres dev packages installed)
-    # we don't have an way to determine if a string literal represent an expression or
-    # just a constant. So we are able to check for and raise an error in the 5.2
-    # behavior of unexpected casting to NULL, but we are not able to check for and
-    # raise an error in the 5.1 behavior of unexpectedly casting to a constant.
+    # behavior. It's fairly difficult (without relying on something like the PgQuery gem
+    # which requires native extensions built with the Postgres dev packages installed)
+    # to determine if a string literal represent an expression or just a constant. So
+    # instead of trying to parse the expression, we employ a set of heuristics:
+    # - If the column is text-like or binary, then we can allow anything in the default
+    #   value since a Ruby string there will always coerce directly to the equivalent
+    #   text/binary value rather than being interpreted as a DDL-time expression.
+    # - Otherwise, disallow any Ruby string values and instead require the Ruby object
+    #   type that maps to the column type.
+    #
+    # These heuristics eliminate (virtually?) all ambiguity. In theory there's a
+    # possiblity that some custom object could be coerced-Ruby side into a SQL string
+    # that does something weird here, but that seems an odd enough case that we can
+    # safely ignore it.
     if default_value.present? &&
        !default_value.is_a?(Proc) &&
-       connection.quote_default_expression(default_value, column) == "NULL"
+       (
+         connection.quote_default_expression(default_value, column) == "NULL" ||
+         (
+           ![:string, :text, :binary].include?(column.sql_type_metadata.type) &&
+           default_value.is_a?(String)
+         )
+       )
       raise PgHaMigrations::InvalidMigrationError, <<~ERROR
         Setting a default value to an expression using a string literal is ambiguous.
 
         If you want the default to be:
+        * ...a constant scalar value, use the matching Ruby object type instead of a string if possible (e.g., `DateTime.new(...)`).
         * ...an expression evaluated at runtime for each row, then pass a Proc that returns the expression string (e.g., `-> { "NOW()" }`).
         * ...an expression evaluated at migration time, then pass a Proc that returns a quoted expression string (e.g., `-> { "'NOW()'" }`).
       ERROR
