@@ -66,6 +66,8 @@ module PgHaMigrations::SafeStatements
     # - If the column is text-like or binary, then we can allow anything in the default
     #   value since a Ruby string there will always coerce directly to the equivalent
     #   text/binary value rather than being interpreted as a DDL-time expression.
+    # - Custom enum types are a special case: they also are treated like strings by
+    #   Rails, so we want to allow those as-is.
     # - Otherwise, disallow any Ruby string values and instead require the Ruby object
     #   type that maps to the column type.
     #
@@ -78,7 +80,7 @@ module PgHaMigrations::SafeStatements
        (
          connection.quote_default_expression(default_value, column) == "NULL" ||
          (
-           ![:string, :text, :binary].include?(column.sql_type_metadata.type) &&
+           ![:string, :text, :binary, :enum].include?(column.sql_type_metadata.type) &&
            default_value.is_a?(String)
          )
        )

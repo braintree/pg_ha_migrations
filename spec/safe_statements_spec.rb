@@ -614,12 +614,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(5)
           end
 
-          [:string, :text, :binary].each do |type|
+          [:string, :text, :enum, :binary].each do |type|
             it "allows a value that looks like an expression for the #{type.inspect} type" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
                   unsafe_create_table :foos
-                  safe_add_column :foos, :bar, type
+                  if type == :enum
+                    safe_create_enum_type :bt_foo_enum, ["NOW()"]
+                    safe_add_column :foos, :bar, :bt_foo_enum
+                  else
+                    safe_add_column :foos, :bar, type
+                  end
                   safe_change_column_default :foos, :bar, 'NOW()'
                 end
               end
