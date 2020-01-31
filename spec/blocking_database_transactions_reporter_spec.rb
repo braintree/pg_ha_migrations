@@ -9,7 +9,7 @@ RSpec.describe PgHaMigrations::BlockingDatabaseTransactionsReporter do
       end
     end
 
-    it "Does not puts when no blocking transactions exist" do
+    it "does not puts when no blocking transactions exist" do
       allow(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:get_blocking_transactions).and_return(
         {
           "Primary database" => [],
@@ -84,7 +84,7 @@ RSpec.describe PgHaMigrations::BlockingDatabaseTransactionsReporter do
         expect(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:_puts) do |message|
           expect(message).to match(/Potentially blocking transactions/)
           database = "pg_ha_migrations_test"
-          expect(message).to match(/Primary database:\n\s+#{database} | tables \(foos1, foos2\).*pg_sleep/m)
+          expect(message).to match(/Primary database:\n\s+#{database} \| tables \(foos1, foos2\).*pg_sleep/m)
         end
 
         PgHaMigrations::BlockingDatabaseTransactionsReporter.run
