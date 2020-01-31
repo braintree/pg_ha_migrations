@@ -63,13 +63,15 @@ RSpec.describe PgHaMigrations::BlockingDatabaseTransactionsReporter do
       mutex = Mutex.new
       thread = Thread.new do
         begin
-          mutex.lock
-          ActiveRecord::Base.connection.execute(<<-SQL)
-            select pg_sleep(4)
-            from (values (1)) t(n)
-            left outer join foos1 on true
-            left outer join foos2 on true
-          SQL
+          ActiveRecord::Base.connection_pool.with_connection do |connection|
+            mutex.lock
+            connection.execute(<<-SQL)
+              select pg_sleep(4)
+              from (values (1)) t(n)
+              left outer join foos1 on true
+              left outer join foos2 on true
+            SQL
+          end
         rescue => e
           thread_errors << e
         end
