@@ -1216,7 +1216,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
                 block_call_count += 1
                 if block_call_count < 3
-                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "", 5, [table_name.to_s])]
+                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "", 5, "active", [table_name.to_s])]
                 else
                   []
                 end
@@ -1300,7 +1300,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions).exactly(2).times do |*args|
                 blocking_queries_calls += 1
                 if blocking_queries_calls == 1
-                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "some_sql_query", 5, [table_name.to_s])]
+                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "some_sql_query", "active", 5, [table_name.to_s])]
                 else
                   []
                 end

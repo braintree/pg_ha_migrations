@@ -96,6 +96,49 @@ RSpec.describe PgHaMigrations::BlockingDatabaseTransactionsReporter do
         raise thread_errors.pop
       end
     end
+
+    it "returns a description of idle transactions" do
+      stub_const("PgHaMigrations::BlockingDatabaseTransactionsReporter::CHECK_DURATION", "1 second")
+
+      thread_errors = Queue.new
+
+      mutex = Mutex.new
+      thread = Thread.new do
+        begin
+          ActiveRecord::Base.connection_pool.with_connection do |connection|
+            connection.execute("BEGIN")
+            connection.execute("SELECT 123")
+
+            mutex.lock
+
+            sleep 4
+
+            connection.execute("ROLLBACK")
+          end
+        rescue => e
+          thread_errors << e
+        end
+      end
+
+      Thread.pass while !mutex.locked? && thread_errors.empty?
+      sleep(2)
+
+      begin
+        expect(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:_puts) do |message|
+          expect(message).to match(/Potentially blocking transactions/)
+          database = "pg_ha_migrations_test"
+          expect(message).to match(/Primary database:\n\s+#{database} \| currently idle .* last query: SELECT 123/m)
+        end
+
+        PgHaMigrations::BlockingDatabaseTransactionsReporter.run
+      ensure
+        thread.join
+      end
+
+      unless thread_errors.empty?
+        raise thread_errors.pop
+      end
+    end
   end
 end
 
