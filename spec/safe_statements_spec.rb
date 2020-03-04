@@ -538,6 +538,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "unsafe_add_column" do
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.unsafe_add_column(:foos, :bar, :text)
+          end
+        end
+
         describe "safe_add_column" do
           it "forbids setting a default" do
             migration = Class.new(migration_klass) do
@@ -612,6 +621,22 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
             expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(5)
+          end
+
+          it "calls safely_acquire_lock_for_table" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                safe_add_column :foos, :bar, :integer
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.safe_change_column_default(:foos, :bar, 5)
           end
 
           [:string, :text, :enum, :binary].each do |type|
@@ -827,6 +852,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(true)
           end
+
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.safe_make_column_nullable(:foos, :bar)
+          end
         end
 
         describe "safe_set_maintenance_work_mem_gb" do
@@ -955,6 +987,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration.suppress_messages { migration.migrate(:up) }
 
             expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
+          end
+
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.unsafe_make_column_not_nullable(:foos, :bar, :estimated_rows => 0)
           end
         end
 
@@ -1161,6 +1200,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
             setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.unsafe_add_check_constraint(:foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null)
           end
 
           it "adds a CHECK constraint" do
@@ -1409,6 +1455,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
               test_migration.migrate(:up)
             end.to output(/rename_constraint\(:foos, from: :constraint_foo_bar_is_not_null, to: :other_constraint\)/m).to_stdout
           end
+
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.safe_rename_constraint(:foos, :from => :constraint_foo_bar_is_not_null, :to => :other_constraint)
+          end
         end
 
         describe "#unsafe_remove_constraint" do
@@ -1421,6 +1474,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
             setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.unsafe_remove_constraint(:foos, :name => :constraint_foo_bar_is_not_null)
           end
 
           it "drop the constraint" do

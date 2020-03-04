@@ -57,8 +57,8 @@ module PgHaMigrations::AutoIncluder
   def inherited(klass)
     super(klass) if defined?(super)
 
-    klass.prepend(PgHaMigrations::SafeStatements)
     klass.prepend(PgHaMigrations::UnsafeStatements)
+    klass.prepend(PgHaMigrations::SafeStatements)
   end
 end
 
