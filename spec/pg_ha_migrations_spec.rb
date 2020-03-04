@@ -81,16 +81,16 @@ RSpec.describe PgHaMigrations do
 
       it "prepends PgHaMigrations modules to the inherited class" do
         expect(subclass.ancestors[0..1]).to eq([
-          PgHaMigrations::UnsafeStatements,
           PgHaMigrations::SafeStatements,
+          PgHaMigrations::UnsafeStatements,
         ])
       end
 
       it "does not include the module more than once" do
         included_modules = subclass.ancestors.select do |ancestor|
           [
-            PgHaMigrations::UnsafeStatements,
             PgHaMigrations::SafeStatements,
+            PgHaMigrations::UnsafeStatements,
           ].include?(ancestor)
         end
 
