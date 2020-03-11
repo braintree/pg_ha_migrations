@@ -623,6 +623,23 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(5)
           end
 
+          it "sets value of a column default to NULL when nil is passed in" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                safe_add_column :foos, :bar, :integer
+                safe_change_column_default :foos, :bar, nil
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to be_nil
+
+            ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+            expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to be_nil
+          end
+
           it "calls safely_acquire_lock_for_table" do
             setup_migration = Class.new(migration_klass) do
               def up

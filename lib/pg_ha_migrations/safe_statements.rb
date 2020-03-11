@@ -94,6 +94,10 @@ module PgHaMigrations::SafeStatements
       ERROR
     end
 
+    if default_value.nil?
+      default_value = -> { "NULL" }
+    end
+
     safely_acquire_lock_for_table(table_name) do
       unsafe_change_column_default(table_name, column_name, default_value)
     end
