@@ -1,5 +1,4 @@
 require 'stringio'
-require 'active_support/core_ext/string/strip'
 
 module PgHaMigrations
   class BlockingDatabaseTransactionsReporter
@@ -25,7 +24,7 @@ module PgHaMigrations
         end
 
         if blocking_transactions.any?(&:concurrent_index_creation?)
-          report << <<-eos.strip_heredoc.lines.map { |line| "\t#{line}" }.join
+          report << <<~eos.lines.map { |line| "\t#{line}" }.join
             Warning: concurrent indexes are currently being built. If you have any other
                      migrations in this deploy that will attempt to create additional
                      concurrent indexes on the same physical database (even if the table
