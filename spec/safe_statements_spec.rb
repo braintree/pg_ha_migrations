@@ -490,7 +490,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect(ActiveRecord::Base.connection.tables).to include("foos3")
 
-            expect(updated_at_column.sql_type).to eq("timestamp without time zone")
+            expect(updated_at_column.sql_type).to match(/timestamp(\(6\))? without time zone/)
             expect(text_column.sql_type).to eq("text")
           end
 
