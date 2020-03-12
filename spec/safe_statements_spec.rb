@@ -687,7 +687,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             # an arbitrary set of versions).
             ActiveRecord::Base.connection.change_column_default(:foos, :bar, 'NOW()')
             default_value = ActiveRecord::Base.value_from_sql <<~SQL
-              SELECT adsrc
+              SELECT pg_get_expr(adbin, adrelid)
               FROM pg_attrdef
               WHERE adrelid = 'foos'::regclass AND adnum = (
                 SELECT attnum
@@ -724,7 +724,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             # an arbitrary set of versions).
             ActiveRecord::Base.connection.change_column_default(:foos, :bar, 'NOW()')
             default_value = ActiveRecord::Base.value_from_sql <<~SQL
-              SELECT adsrc
+              SELECT pg_get_expr(adbin, adrelid)
               FROM pg_attrdef
               WHERE adrelid = 'foos'::regclass AND adnum = (
                 SELECT attnum
@@ -771,7 +771,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration.suppress_messages { migration.migrate(:up) }
 
             default_value = ActiveRecord::Base.connection.select_value <<-SQL
-              SELECT adsrc
+              SELECT pg_get_expr(adbin, adrelid)
               FROM pg_attrdef
               JOIN pg_attribute ON adnum = attnum AND adrelid = attrelid
               WHERE attname = 'bar' AND attrelid = 'foos'::regclass
@@ -807,7 +807,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration.suppress_messages { migration.migrate(:up) }
 
             default_value = ActiveRecord::Base.connection.select_value <<-SQL
-              SELECT adsrc
+              SELECT pg_get_expr(adbin, adrelid)
               FROM pg_attrdef
               JOIN pg_attribute ON adnum = attnum AND adrelid = attrelid
               WHERE attname = 'bar' AND attrelid = 'foos'::regclass
@@ -1139,13 +1139,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to make_database_queries(matching: /ALTER TABLE .+ ADD CONSTRAINT/, count: 1)
 
             constraint_name, constraint_validated, constraint_expression = ActiveRecord::Base.tuple_from_sql <<~SQL
-              SELECT conname, convalidated, consrc
+              SELECT conname, convalidated, pg_get_constraintdef(oid)
               FROM pg_constraint
               WHERE conrelid = 'foos'::regclass AND contype != 'p'
             SQL
 
             expect(constraint_name).to eq("constraint_foo_bar_is_not_null")
-            expect(constraint_expression).to eq("(bar IS NOT NULL)")
+            expect(constraint_expression).to eq("CHECK ((bar IS NOT NULL)) NOT VALID")
           end
 
           it "raises a helpful error if a name is not passed" do
@@ -1221,13 +1221,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to make_database_queries(matching: /ALTER TABLE .+ ADD CONSTRAINT/, count: 1)
 
             constraint_name, constraint_validated, constraint_expression = ActiveRecord::Base.tuple_from_sql <<~SQL
-              SELECT conname, convalidated, consrc
+              SELECT conname, convalidated, pg_get_constraintdef(oid)
               FROM pg_constraint
               WHERE conrelid = 'foos'::regclass AND contype != 'p'
             SQL
 
             expect(constraint_name).to eq("constraint_foo_bar_is_not_null")
-            expect(constraint_expression).to eq("(bar IS NOT NULL)")
+            expect(constraint_expression).to eq("CHECK ((bar IS NOT NULL))")
           end
 
           it "raises a helpful error if a name is not passed" do
