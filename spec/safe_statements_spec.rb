@@ -1804,7 +1804,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "uses statement_timeout instead of lock_timeout when on Postgres 9.1" do
-              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_01_12)
+              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_wrap_original do |m, *args|
+                if caller.detect { |line| line =~ /lib\/pg_ha_migrations\/blocking_database_transactions\.rb/ }
+                  # The long-running transactions check needs to know the actual
+                  # Postgres version to use the proper columns, so we don't want
+                  # to mock any calls from it.
+                  m.call(*args)
+                else
+                  9_01_12
+                end
+              end
+
               expect do
                 migration.safely_acquire_lock_for_table(table_name) do
                   expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty

@@ -25,13 +25,19 @@ module PgHaMigrations
     end
 
     def self.find_blocking_transactions(minimum_transaction_age = "0 seconds")
-      pid_column, query_column = if ActiveRecord::Base.connection.select_value("SHOW server_version") =~ /9\.1/
+      postgres_version = ActiveRecord::Base.connection.postgresql_version
+      pid_column, query_column = if postgres_version < 9_02_00
         ["procpid", "current_query"]
       else
         ["pid", "query"]
       end
 
-      raw_query = <<-SQL
+      # In some versions of Postgres, walsenders show up here with a non-null xact_start.
+      # That's been patched, so hard to test, but we should exclude them anyway.
+      # https://www.postgresql.org/message-id/flat/20191209234409.exe7osmyalwkt5j4%40development
+      ignore_sqlsender_sql = "psa.backend_type != 'walsender'"
+
+      raw_query = <<~SQL
         SELECT
           psa.datname as database, -- Will only ever be one database
           psa.#{query_column} as current_query,
@@ -59,6 +65,7 @@ module PgHaMigrations
           )
           AND psa.xact_start < clock_timestamp() - ?::interval
           AND psa.#{query_column} !~ ?
+          #{postgres_version >= 10_00_00 ? "AND #{ignore_sqlsender_sql}" : ""}
         GROUP BY psa.datname, psa.#{query_column}, psa.state, psa.xact_start
       SQL
 
