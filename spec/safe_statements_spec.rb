@@ -548,11 +548,62 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "safe_add_column" do
-          it "forbids setting a default" do
+          it "allows setting a default on Postgres 11+ and forbids it otherwise" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :text, :default => ""
+                ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+                safe_add_column :foos, :bar, :text, :default => "baz"
+              end
+            end
+
+            if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+              migration.suppress_messages { migration.migrate(:up) }
+              expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
+            else
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error PgHaMigrations::UnsafeMigrationError
+            end
+          end
+
+          [:string, :text, :enum, :binary].each do |type|
+            it "allows a default value that looks like an expression for the #{type.inspect} type" do
+              migration = Class.new(migration_klass) do
+                define_method(:up) do
+                  unsafe_create_table :foos
+                  ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+                  if type == :enum
+                    safe_create_enum_type :bt_foo_enum, ["NOW()"]
+                    safe_add_column :foos, :bar, :bt_foo_enum, :default => 'NOW()'
+                  else
+                    safe_add_column :foos, :bar, type, :default => 'NOW()'
+                  end
+                end
+              end
+
+              if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+                migration.suppress_messages { migration.migrate(:up) }
+
+                # Handle binary columns being transported, but not stored, as hex.
+                expected_value = type == :binary ? "\\x4e4f572829" : "NOW()"
+                expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq(expected_value)
+
+                ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+                expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(expected_value)
+              else
+                expect do
+                  migration.suppress_messages { migration.migrate(:up) }
+                end.to raise_error PgHaMigrations::UnsafeMigrationError
+              end
+            end
+          end
+
+          it "does not allow setting a default value with a proc" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                safe_add_column :foos, :bar, :text, :default => -> { 'NOW()' }
               end
             end
 

@@ -26,8 +26,14 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_add_column(table, column, type, options = {})
-    if options.has_key? :default
-      raise PgHaMigrations::UnsafeMigrationError.new(":default is NOT SAFE! Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
+    if options.has_key?(:default)
+      if ActiveRecord::Base.connection.postgresql_version <= 11_00_00
+        raise PgHaMigrations::UnsafeMigrationError.new(":default is NOT SAFE! Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
+      else
+        if options[:default].is_a?(Proc) || (options[:default].is_a?(String) && !([:string, :text, :binary].include?(type.to_sym) || _type_is_enum(type)))
+          raise PgHaMigrations::UnsafeMigrationError.new(":default is not safe if the default value is volatile. Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
+        end
+      end
     end
     if options[:null] == false
       raise PgHaMigrations::UnsafeMigrationError.new(":null => false is NOT SAFE if the table has data! If you _really_ want to do this, use unsafe_make_column_not_nullable")
@@ -199,6 +205,10 @@ module PgHaMigrations::SafeStatements
     expected_adapter = "PostgreSQL"
     actual_adapter = ActiveRecord::Base.connection.adapter_name
     raise PgHaMigrations::UnsupportedAdapter, "This gem only works with the #{expected_adapter} adapter, found #{actual_adapter} instead" unless actual_adapter == expected_adapter
+  end
+
+  def _type_is_enum(type)
+    ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type JOIN pg_enum ON pg_type.oid = pg_enum.enumtypid").include?(type.to_s)
   end
 
   def migrate(direction)
