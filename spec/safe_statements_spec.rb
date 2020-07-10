@@ -589,7 +589,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 expected_value = type == :binary ? "\\x4e4f572829" : "NOW()"
                 expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq(expected_value)
 
-                ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+                ActiveRecord::Base.connection.execute("INSERT INTO foos(bar) VALUES (1)")
                 expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(expected_value)
               else
                 expect do
