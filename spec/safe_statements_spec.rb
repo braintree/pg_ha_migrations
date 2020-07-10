@@ -552,7 +552,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+                ActiveRecord::Base.connection.execute("INSERT INTO foos(bar) VALUES (1)")
                 safe_add_column :foos, :bar, :text, :default => "baz"
               end
             end
