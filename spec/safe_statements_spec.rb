@@ -568,7 +568,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           [:string, :text, :enum, :binary].each do |type|
-            it "allows a default value that looks like an expression for the #{type.inspect} type" do
+            it "allows a default value that looks like an expression for the #{type.inspect} type on Postgres 11+" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
                   unsafe_create_table :foos
