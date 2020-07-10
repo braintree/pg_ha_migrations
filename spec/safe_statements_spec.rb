@@ -572,7 +572,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
                   unsafe_create_table :foos
-                  ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
+                  ActiveRecord::Base.connection.execute("INSERT INTO foos(bar) VALUES (1)")
                   if type == :enum
                     safe_create_enum_type :bt_foo_enum, ["NOW()"]
                     safe_add_column :foos, :bar, :bt_foo_enum, :default => 'NOW()'
