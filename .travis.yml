@@ -13,8 +13,7 @@ env:
 services:
   - postgresql
 before_install:
-  - sudo service postgresql stop
-  - sudo pg_dropcluster 9.6 main
+  - "for CLUSTER_VERSION in $(pg_lsclusters -h | cut -d' ' -f1); do sudo pg_dropcluster $CLUSTER_VERSION main --stop; done"
   - sudo apt-get update
   - sudo apt-get -y install postgresql-$PGVERSION postgresql-client-$PGVERSION postgresql-server-dev-$PGVERSION postgresql-client-common postgresql-common
   - sudo pg_dropcluster $PGVERSION main
