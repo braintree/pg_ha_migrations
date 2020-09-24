@@ -14,10 +14,12 @@ services:
   - postgresql
 before_install:
   - sudo service postgresql stop
+  - sudo pg_dropcluster 9.6 main
   - sudo apt-get update
   - sudo apt-get -y install postgresql-$PGVERSION postgresql-client-$PGVERSION postgresql-server-dev-$PGVERSION postgresql-client-common postgresql-common
-  - if [ $PGVERSION != '9.6' ]; then sudo cp /etc/postgresql/{9.6,$PGVERSION}/main/pg_hba.conf; fi
-  - sudo systemctl start postgresql@$PGVERSION-main
+  - sudo pg_dropcluster $PGVERSION main
+  - sudo pg_createcluster $PGVERSION main -D /var/ramfs/postgresql/11/main -- --auth=trust
+  - sudo pg_ctlcluster start $PGVERSION main
   - gem uninstall -v '>= 2' -i $(rvm gemdir)@global -ax bundler || true
   - gem install bundler -v 1.15.4
 gemfile:
