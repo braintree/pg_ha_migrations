@@ -15,6 +15,9 @@ RSpec.configure do |config|
   end
 
   config.before(:all) do
+    server_version = ActiveRecord::Base.connection.select_value("SHOW server_version")
+    puts "DEBUG: Connecting to Postgres server version #{server_version}"
+
     ActiveRecord::Base.connection.tables.each do |table|
       ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
     end
