@@ -16,7 +16,6 @@ before_install:
   - "for CLUSTER_VERSION in $(pg_lsclusters -h | cut -d' ' -f1); do sudo pg_dropcluster $CLUSTER_VERSION main --stop || true; done"
   - sudo apt-get update
   - sudo apt-get -y install postgresql-$PGVERSION postgresql-client-$PGVERSION postgresql-server-dev-$PGVERSION postgresql-client-common postgresql-common
-  - sudo pg_dropcluster $PGVERSION main
   - sudo pg_createcluster $PGVERSION main -D /var/ramfs/postgresql/11/main -- --auth=trust
   - sudo pg_ctlcluster start $PGVERSION main
   - gem uninstall -v '>= 2' -i $(rvm gemdir)@global -ax bundler || true
