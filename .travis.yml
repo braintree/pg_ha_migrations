@@ -2,14 +2,14 @@ sudo: false
 language: ruby
 rvm:
   - 2.5
-global:
-  env:
-    PGPORT: 5433
 env:
-  - PGVERSION: "9.6"
-  - PGVERSION: "10"
-  - PGVERSION: "11"
-  - PGVERSION: "12"
+  global:
+    - PGPORT: 5433
+  jobs:
+    - PGVERSION: "9.6"
+    - PGVERSION: "10"
+    - PGVERSION: "11"
+    - PGVERSION: "12"
 services:
   - postgresql
 before_install:
@@ -17,7 +17,7 @@ before_install:
   - sudo apt-get update
   - sudo apt-get -y install postgresql-$PGVERSION postgresql-client-$PGVERSION postgresql-server-dev-$PGVERSION postgresql-client-common postgresql-common
   - if [ $PGVERSION != '9.6' ]; then sudo cp /etc/postgresql/{9.6,$PGVERSION}/main/pg_hba.conf; fi
-  - sudo service postgresql restart $PGVERSION
+  - sudo systemctl start postgresql@$PGVERSION-main
   - gem uninstall -v '>= 2' -i $(rvm gemdir)@global -ax bundler || true
   - gem install bundler -v 1.15.4
 gemfile:
