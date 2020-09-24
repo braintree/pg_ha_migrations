@@ -25,6 +25,10 @@ module PgHaMigrations::SafeStatements
     unsafe_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} ADD VALUE '#{PG::Connection.escape_string(value)}'")
   end
 
+  def unsafe_rename_enum_value(name, old_value, new_value)
+    unsafe_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} RENAME VALUE '#{PG::Connection.escape_string(old_value)}' TO '#{PG::Connection.escape_string(new_value)}'")
+  end
+
   def safe_add_column(table, column, type, options = {})
     if options.has_key?(:default)
       if ActiveRecord::Base.connection.postgresql_version < 11_00_00

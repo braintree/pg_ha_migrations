@@ -1025,6 +1025,25 @@ RSpec.describe PgHaMigrations::SafeStatements do
               ])
             end
           end
+
+          describe "unsafe_rename_enum_value" do
+            it "renames a enum value" do
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
+                  unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              expect(_select_enum_names_and_values).to match_array([
+                {"name" => "bt_foo_enum", "value" => "one"},
+                {"name" => "bt_foo_enum", "value" => "two"},
+                {"name" => "bt_foo_enum", "value" => "updated"},
+              ])
+            end
+          end
         end
 
         describe "unsafe_make_column_not_nullable" do
