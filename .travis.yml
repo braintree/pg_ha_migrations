@@ -3,8 +3,6 @@ language: ruby
 rvm:
   - 2.5
 env:
-  global:
-    - PGPORT: 5433
   jobs:
     - PGVERSION: "9.6"
     - PGVERSION: "10"
