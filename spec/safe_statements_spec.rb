@@ -552,7 +552,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                ActiveRecord::Base.connection.execute("INSERT INTO foos(id) VALUES (1)")
+                ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
                 safe_add_column :foos, :bar, :text, :default => "baz"
               end
             end
@@ -572,7 +572,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
                   unsafe_create_table :foos
-                  ActiveRecord::Base.connection.execute("INSERT INTO foos(id) VALUES (1)")
+                  # Add an existing value so we trigger backfilling values
+                  # on the new column.
+                  ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
                   if type == :enum
                     safe_create_enum_type :bt_foo_enum, ["NOW()"]
                     safe_add_column :foos, :bar, :bt_foo_enum, :default => 'NOW()'
@@ -589,8 +591,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 expected_value = type == :binary ? "\\x4e4f572829" : "NOW()"
                 expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq(expected_value)
 
-                ActiveRecord::Base.connection.execute("INSERT INTO foos(id) VALUES (1)")
-                expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(expected_value)
+                ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
+                expect(ActiveRecord::Base.connection.select_values("SELECT bar FROM foos")).to all(eq(expected_value))
               else
                 expect do
                   migration.suppress_messages { migration.migrate(:up) }
