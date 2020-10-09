@@ -26,6 +26,10 @@ module PgHaMigrations::SafeStatements
   end
 
   def unsafe_rename_enum_value(name, old_value, new_value)
+    if ActiveRecord::Base.connection.postgresql_version < 10_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Renaming an enum value is not supported on Postgres databases before version 10"
+    end
+
     unsafe_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} RENAME VALUE '#{PG::Connection.escape_string(old_value)}' TO '#{PG::Connection.escape_string(new_value)}'")
   end
 
