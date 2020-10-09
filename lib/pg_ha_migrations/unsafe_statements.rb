@@ -39,7 +39,6 @@ module PgHaMigrations::UnsafeStatements
   delegate_unsafe_method_to_migration_base_class :change_column
   delegate_unsafe_method_to_migration_base_class :change_column_default
   delegate_unsafe_method_to_migration_base_class :remove_column
-  delegate_unsafe_method_to_migration_base_class :add_index
   delegate_unsafe_method_to_migration_base_class :execute
   delegate_unsafe_method_to_migration_base_class :remove_index
   delegate_unsafe_method_to_migration_base_class :add_foreign_key
@@ -68,6 +67,16 @@ module PgHaMigrations::UnsafeStatements
 
     execute_ancestor_statement(:create_table, table, options, &block)
   end
+
+  def unsafe_add_index(table, column_names, options = {})
+    if ((ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR >= 2) || ActiveRecord::VERSION::MAJOR > 5) &&
+        column_names.is_a?(String) && /\W/.match?(column_names) && options.key?(:opclass)
+      raise PgHaMigrations::InvalidMigrationError, "ActiveRecord drops the :opclass option when supplying a string container an expression or list of columns; instead either supply an array of columns or include the opclass in the string for each column"
+    end
+
+    execute_ancestor_statement(:add_index, table, column_names, options)
+  end
+
 
   def execute_ancestor_statement(method_name, *args, &block)
     # Dispatching here is a bit complicated: we need to execute the method
