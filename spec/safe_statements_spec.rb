@@ -1060,7 +1060,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, /not supported.+version/)
             end
           end
         end
