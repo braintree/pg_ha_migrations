@@ -106,6 +106,18 @@ Safely add a new enum value.
 safe_add_enum_value :enum, "value"
 ```
 
+#### unsafe\_rename\_enum\_value
+
+Unsafely change the value of an enum type entry.
+
+```ruby
+unsafe_rename_enum_value(:enum, "old_value", "new_value")
+```
+
+Note:
+
+Changing an enum value does not issue any long-running scans or aquire locks on usages of the enum type. Therefore multiple queries within a transaction concurrent with the change may see both the old and new values. To highlight these potential pitfalls no `safe_rename_enum_value` equivalent exists. Before modifying an enum type entry you should verify that no concurrently executing queries will attempt to write the old value and that read queries understand the new value.
+
 #### safe\_add\_column
 
 Safely add a column.

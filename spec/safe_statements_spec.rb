@@ -1025,6 +1025,44 @@ RSpec.describe PgHaMigrations::SafeStatements do
               ])
             end
           end
+
+          describe "unsafe_rename_enum_value" do
+            it "renames a enum value on 10+" do
+              skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
+
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
+                  unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              expect(_select_enum_names_and_values).to match_array([
+                {"name" => "bt_foo_enum", "value" => "one"},
+                {"name" => "bt_foo_enum", "value" => "two"},
+                {"name" => "bt_foo_enum", "value" => "updated"},
+              ])
+            end
+
+            it "raises a helpful error on 9.6" do
+              if ActiveRecord::Base.connection.postgresql_version >= 10_00_00
+                allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
+              end
+
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
+                  unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error
+            end
+          end
         end
 
         describe "unsafe_make_column_not_nullable" do
