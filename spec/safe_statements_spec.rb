@@ -1114,6 +1114,49 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe  "unsafe_add_index" do
+          it "raises a helper warning when ActiveRecord is going to swallow per-column options" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.integer :bar, :limit => 4
+                  t.integer :baz, :limit => 4
+                end
+                unsafe_add_index :foos, "bar, baz", :opclass => :int4_ops
+              end
+            end
+
+            error_matcher_args = if (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR <= 1) || ActiveRecord::VERSION::MAJOR == 4
+              [ArgumentError, /Unknown key: :opclass/]
+            else
+              [PgHaMigrations::InvalidMigrationError, /ActiveRecord drops the :opclass option/]
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(*error_matcher_args)
+          end
+
+          it "demonstrates ActiveRecord still throws away per-column options when passed string" do
+            if (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR <= 1) || ActiveRecord::VERSION::MAJOR == 4
+              skip "The :opclass option is only supported on ActiveRecord 5.2+"
+            end
+
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.integer :bar, :limit => 4
+                  t.integer :baz, :limit => 4
+                end
+                execute_ancestor_statement(:add_index, :foos, "bar, baz", {:opclass => :int4_ops})
+              end
+            end
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.not_to make_database_queries(matching: /int4_ops/)
+          end
+        end
+
         describe "safe_remove_concurrent_index" do
           it "removes an index using the concurrent algorithm" do
             setup_migration = Class.new(migration_klass) do
