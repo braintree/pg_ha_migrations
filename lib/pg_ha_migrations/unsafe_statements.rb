@@ -71,7 +71,7 @@ module PgHaMigrations::UnsafeStatements
   def unsafe_add_index(table, column_names, options = {})
     if ((ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR >= 2) || ActiveRecord::VERSION::MAJOR > 5) &&
         column_names.is_a?(String) && /\W/.match?(column_names) && options.key?(:opclass)
-      raise PgHaMigrations::InvalidMigrationError, "ActiveRecord drops the :opclass option when supplying a string container an expression or list of columns; instead either supply an array of columns or include the opclass in the string for each column"
+      raise PgHaMigrations::InvalidMigrationError, "ActiveRecord drops the :opclass option when supplying a string containing an expression or list of columns; instead either supply an array of columns or include the opclass in the string for each column"
     end
 
     execute_ancestor_statement(:add_index, table, column_names, options)
