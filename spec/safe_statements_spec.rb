@@ -320,7 +320,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to_not raise_error
           end
 
-          it "does not raise when using default change_column_nullable method" do
+          it "does not raise when using default change_column_null method" do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_table :foos
