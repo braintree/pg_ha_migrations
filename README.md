@@ -55,7 +55,7 @@ There are two major classes of concerns we try to handle in the API:
 
 We rename migration methods with prefixes denoting their safety level:
 
-- `safe_*`: These methods check for both application and database safety concerns prefer concurrent operations where available, set low lock timeouts where appropriate, and decompose operations into multiple safe steps.
+- `safe_*`: These methods check for both application and database safety concerns, prefer concurrent operations where available, set low lock timeouts where appropriate, and decompose operations into multiple safe steps.
 - `unsafe_*`: These methods are generally a direct dispatch to the native ActiveRecord migration method.
 
 Calling the original migration methods without a prefix will raise an error.
@@ -116,7 +116,7 @@ unsafe_rename_enum_value(:enum, "old_value", "new_value")
 
 Note:
 
-Changing an enum value does not issue any long-running scans or aquire locks on usages of the enum type. Therefore multiple queries within a transaction concurrent with the change may see both the old and new values. To highlight these potential pitfalls no `safe_rename_enum_value` equivalent exists. Before modifying an enum type entry you should verify that no concurrently executing queries will attempt to write the old value and that read queries understand the new value.
+Changing an enum value does not issue any long-running scans or acquire locks on usages of the enum type. Therefore multiple queries within a transaction concurrent with the change may see both the old and new values. To highlight these potential pitfalls no `safe_rename_enum_value` equivalent exists. Before modifying an enum type entry you should verify that no concurrently executing queries will attempt to write the old value and that read queries understand the new value.
 
 #### safe\_add\_column
 
