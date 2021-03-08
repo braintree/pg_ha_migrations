@@ -2,6 +2,9 @@
 set -euo pipefail
 IFS=$'\n\t'
 set -vx
+export PGPASSWORD="${PGPASSWORD:-postgres}"
+PGVERSION="${PGVERSION:-13}"
+
 
 bundle install
 bundle exec appraisal install
@@ -9,4 +12,4 @@ bundle exec appraisal install
 # Do any other automated setup that you need to do here
 
 # Launch a blank postgres image for testing
-docker run -d -p 127.0.0.1:5432:5432 postgres:10
+docker run -d -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD="${PGPASSWORD}" postgres:${PGVERSION}
