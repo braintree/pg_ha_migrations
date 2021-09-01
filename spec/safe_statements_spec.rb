@@ -1148,7 +1148,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   t.integer :bar, :limit => 4
                   t.integer :baz, :limit => 4
                 end
-                execute_ancestor_statement(:add_index, :foos, "bar, baz", {:opclass => :int4_ops})
+                execute_ancestor_statement(:add_index, :foos, "bar, baz", {:opclass => {:bar => :int4_ops}})
               end
             end
             expect do
@@ -1469,7 +1469,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "doesn't acquire a lock which prevents concurrent reads and writes" do
-            alternate_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(ActiveRecord::Base.connection_pool.spec)
+            config = if ActiveRecord.gem_version >= Gem::Version.new("6.1")
+              ActiveRecord::ConnectionAdapters::PoolConfig.new(ActiveRecord::Base, ActiveRecord::Base.connection_pool.db_config)
+            else
+              ActiveRecord::Base.connection_pool.spec
+            end
+
+            alternate_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(config)
             alternate_connection = alternate_connection_pool.connection
 
             alternate_connection.execute("BEGIN")
@@ -1780,7 +1786,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
         ["bogus_table", :bogus_table].each do |table_name|
           describe "#safely_acquire_lock_for_table with table_name of type #{table_name.class.name}" do
             let(:alternate_connection_pool) do
-              ActiveRecord::ConnectionAdapters::ConnectionPool.new(ActiveRecord::Base.connection_pool.spec)
+              config = if ActiveRecord.gem_version >= Gem::Version.new("6.1")
+                ActiveRecord::ConnectionAdapters::PoolConfig.new(ActiveRecord::Base, ActiveRecord::Base.connection_pool.db_config)
+              else
+                ActiveRecord::Base.connection_pool.spec
+              end
+              ActiveRecord::ConnectionAdapters::ConnectionPool.new(config)
             end
             let(:alternate_connection) do
               alternate_connection_pool.connection

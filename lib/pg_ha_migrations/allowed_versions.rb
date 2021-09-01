@@ -1,7 +1,7 @@
 require "active_record/migration/compatibility"
 
 module PgHaMigrations::AllowedVersions
-  ALLOWED_VERSIONS = [4.2, 5.0, 5.1, 5.2, 6.0].map do |v|
+  ALLOWED_VERSIONS = [4.2, 5.0, 5.1, 5.2, 6.0, 6.1].map do |v|
     begin
       ActiveRecord::Migration[v]
     rescue ArgumentError
