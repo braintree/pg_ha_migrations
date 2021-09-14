@@ -34,14 +34,21 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_add_column(table, column, type, options = {})
+    # Note: we don't believe we need to consider the odd case where
+    # `:default => nil` or `:default => -> { null }` (or similar) is
+    # passed because:
+    # - It's OK to exclude that case with an "unnecessary" `raise`
+    #   below as it doesn't make semantic sense anyway.
+    # - If `:null => false` is also passed we are assuming Postgres's
+    #   seq scan of the table (to verify the NOT NULL constraint) will
+    #   short-circuit (though we have not confirmed that).
     if options.has_key?(:default)
       if ActiveRecord::Base.connection.postgresql_version < 11_00_00
         raise PgHaMigrations::UnsafeMigrationError.new(":default is NOT SAFE! Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
       elsif options[:default].is_a?(Proc) || (options[:default].is_a?(String) && !([:string, :text, :binary].include?(type.to_sym) || _type_is_enum(type)))
         raise PgHaMigrations::UnsafeMigrationError.new(":default is not safe if the default value is volatile. Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
       end
-    end
-    if options[:null] == false
+    elsif options[:null] == false
       raise PgHaMigrations::UnsafeMigrationError.new(":null => false is NOT SAFE if the table has data! If you _really_ want to do this, use unsafe_make_column_not_nullable")
     end
 
