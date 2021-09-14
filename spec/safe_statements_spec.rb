@@ -614,7 +614,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error PgHaMigrations::UnsafeMigrationError
           end
 
-          it "forbids setting null => false" do
+          it "forbids setting null => false (when no default is provided)" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
@@ -625,6 +625,28 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect do
               migration.suppress_messages { migration.migrate(:up) }
             end.to raise_error PgHaMigrations::UnsafeMigrationError
+          end
+
+          it "allows setting null => false (with a default) on Postgres 11+ and forbids it otherwise" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
+                safe_add_column :foos, :bar, :text, :null => false, :default => "baz"
+              end
+            end
+
+            if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+              migration.suppress_messages { migration.migrate(:up) }
+              aggregate_failures do
+                expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
+                expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
+              end
+            else
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error PgHaMigrations::UnsafeMigrationError
+            end
           end
 
           it "add column of default is not set" do
