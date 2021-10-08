@@ -29,18 +29,18 @@ module PgHaMigrations
   # Safe versus unsafe in this context specifically means the following:
   # - Safe operations will not block for long periods of time.
   # - Unsafe operations _may_ block for long periods of time.
-  UnsafeMigrationError = Class.new(Exception)
+  UnsafeMigrationError = Class.new(StandardError)
 
   # Invalid migrations are operations which we expect to not function
   # as expected or get the schema into an inconsistent state
-  InvalidMigrationError = Class.new(Exception)
+  InvalidMigrationError = Class.new(StandardError)
 
   # Unsupported migrations use ActiveRecord::Migration features that
   # we don't support, and therefore will likely have unexpected behavior.
-  UnsupportedMigrationError = Class.new(Exception)
+  UnsupportedMigrationError = Class.new(StandardError)
 
   # This gem only supports the PostgreSQL adapter at this time.
-  UnsupportedAdapter = Class.new(Exception)
+  UnsupportedAdapter = Class.new(StandardError)
 end
 
 require "pg_ha_migrations/blocking_database_transactions"
