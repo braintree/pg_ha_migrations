@@ -1,4 +1,8 @@
 module PgHaMigrations::SafeStatements
+  def safe_added_columns_without_default_value
+    @safe_added_columns_without_default_value ||= []
+  end
+
   def safe_create_table(table, options={}, &block)
     if options[:force]
       raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
@@ -52,6 +56,10 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::UnsafeMigrationError.new(":null => false is NOT SAFE if the table has data! If you _really_ want to do this, use unsafe_make_column_not_nullable")
     end
 
+    unless options.has_key?(:default)
+      self.safe_added_columns_without_default_value << [table.to_s, column.to_s]
+    end
+
     unsafe_add_column(table, column, type, options)
   end
 
@@ -62,6 +70,12 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_change_column_default(table_name, column_name, default_value)
+    if PgHaMigrations.config.prefer_single_step_column_addition_with_default &&
+        ActiveRecord::Base.connection.postgresql_version >= 11_00_00 &&
+        self.safe_added_columns_without_default_value.include?([table_name.to_s, column_name.to_s])
+      raise PgHaMigrations::BestPracticeError, "On Postgres 11+ it's safe to set a constant default value when adding a new column; please set the default value as part of the column addition"
+    end
+
     column = connection.send(:column_for, table_name, column_name)
 
     # In 5.2 we have an edge whereby passing in a string literal with an expression

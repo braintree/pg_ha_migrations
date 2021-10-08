@@ -148,6 +148,8 @@ safe_change_column_default :table, :column, -> { "NOW()" }
 safe_change_column_default :table, :column, -> { "'NOW()'" }
 ```
 
+Note: On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = true` [in your configuration initializer](#configuration).
+
 #### safe\_make\_column\_nullable
 
 Safely make the column nullable.
@@ -272,6 +274,7 @@ end
 
 - `disable_default_migration_methods`: If true, the default implementations of DDL changes in `ActiveRecord::Migration` and the PostgreSQL adapter will be overridden by implementations that raise a `PgHaMigrations::UnsafeMigrationError`. Default: `true`
 - `check_for_dependent_objects`: If true, some `unsafe_*` migration methods will raise a `PgHaMigrations::UnsafeMigrationError` if any dependent objects exist. Default: `false`
+- `prefer_single_step_column_addition_with_default`: If `true`, raise an error when adding a column and separately setting a constant default value for that column in the same migration.
 
 ### Rake Tasks
 
