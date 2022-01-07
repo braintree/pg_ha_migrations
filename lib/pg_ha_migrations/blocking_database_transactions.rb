@@ -49,10 +49,6 @@ module PgHaMigrations
           LEFT JOIN pg_class c ON ( -- Database wide
             l.locktype = 'relation'
             AND l.relation = c.oid
-            -- Be explicit about this being for a single database -- it's already implicit in
-            -- the relations used, and if we don't restrict this we could get incorrect results
-            -- with oid collisions from pg_namespace and pg_class.
-            AND l.database = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database())
           )
           LEFT JOIN pg_namespace ns ON (c.relnamespace = ns.oid) -- Database wide
         WHERE psa.#{pid_column} != pg_backend_pid()
@@ -65,6 +61,10 @@ module PgHaMigrations
           )
           AND psa.xact_start < clock_timestamp() - ?::interval
           AND psa.#{query_column} !~ ?
+          -- Be explicit about this being for a single database -- it's already implicit in
+          -- the relations used, and if we don't restrict this we could get incorrect results
+          -- with oid collisions from pg_namespace and pg_class.
+          AND psa.datname = current_database()
           #{postgres_version >= 10_00_00 ? "AND #{ignore_sqlsender_sql}" : ""}
         GROUP BY psa.datname, psa.#{query_column}, psa.state, psa.xact_start
       SQL

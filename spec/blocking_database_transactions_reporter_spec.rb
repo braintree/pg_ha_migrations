@@ -139,6 +139,59 @@ RSpec.describe PgHaMigrations::BlockingDatabaseTransactionsReporter do
         raise thread_errors.pop
       end
     end
+
+    it "ignores databases besides the one being queried" do
+      use_rails_6_1_method = !(ActiveRecord::VERSION::MAJOR < 6 || (ActiveRecord::VERSION::MAJOR == 6 && ActiveRecord::VERSION::MINOR == 0))
+      original_db_config_hash = if use_rails_6_1_method
+        ActiveRecord::Base
+          .configurations
+          .configs_for(env_name: "test")
+          .first
+          .configuration_hash
+      else
+        ActiveRecord::Base.configurations["test"].symbolize_keys
+      end.dup
+
+      original_db_config_hash[:database] = "postgres"
+
+      connection_pool_config = if use_rails_6_1_method
+        db_config = ActiveRecord::DatabaseConfigurations::HashConfig.new("test", "test postgres", original_db_config_hash)
+        ActiveRecord::ConnectionAdapters::PoolConfig.new(::ActiveRecord::Base, db_config)
+      else
+        ActiveRecord::ConnectionAdapters::ConnectionSpecification::Resolver.new({}).spec(original_db_config_hash)
+      end
+
+      other_db_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(connection_pool_config)
+
+      stub_const("PgHaMigrations::BlockingDatabaseTransactionsReporter::CHECK_DURATION", "1 second")
+
+      thread_errors = Queue.new
+
+      mutex = Mutex.new
+      thread = Thread.new do
+        begin
+          other_db_connection_pool.with_connection do |connection|
+            mutex.lock
+            connection.execute("SELECT pg_sleep(3)")
+          end
+        rescue => e
+          thread_errors << e
+        end
+      end
+
+      Thread.pass while !mutex.locked? && thread_errors.empty?
+      sleep(1)
+
+      begin
+        expect(PgHaMigrations::BlockingDatabaseTransactionsReporter.get_blocking_transactions.values).to all(be_empty)
+      ensure
+        thread.join
+      end
+
+      unless thread_errors.empty?
+        raise thread_errors.pop
+      end
+    end
   end
 end
 
