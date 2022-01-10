@@ -668,7 +668,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :text
+                unsafe_add_column :foos, :bar, :text
                 safe_change_column_default :foos, :bar, "baz"
               end
             end
@@ -685,7 +685,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :integer
+                unsafe_add_column :foos, :bar, :integer
                 safe_change_column_default :foos, :bar, 5
               end
             end
@@ -702,7 +702,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             setup_migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :integer
+                unsafe_add_column :foos, :bar, :integer
               end
             end
 
@@ -721,9 +721,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   unsafe_create_table :foos
                   if type == :enum
                     safe_create_enum_type :bt_foo_enum, ["NOW()"]
-                    safe_add_column :foos, :bar, :bt_foo_enum
+                    unsafe_add_column :foos, :bar, :bt_foo_enum
                   else
-                    safe_add_column :foos, :bar, type
+                    unsafe_add_column :foos, :bar, type
                   end
                   safe_change_column_default :foos, :bar, 'NOW()'
                 end
@@ -744,7 +744,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             setup_migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :timestamp
+                unsafe_add_column :foos, :bar, :timestamp
               end
             end
             setup_migration.suppress_messages { setup_migration.migrate(:up) }
@@ -781,7 +781,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             setup_migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :timestamp
+                unsafe_add_column :foos, :bar, :timestamp
               end
             end
             setup_migration.suppress_messages { setup_migration.migrate(:up) }
@@ -818,7 +818,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :timestamp
+                unsafe_add_column :foos, :bar, :timestamp
                 safe_change_column_default :foos, :bar, -> { "'NOW()'" }
               end
             end
@@ -838,7 +838,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
-                safe_add_column :foos, :bar, :timestamp
+                unsafe_add_column :foos, :bar, :timestamp
                 safe_change_column_default :foos, :bar, -> { 'NOW()' }
               end
             end
@@ -909,6 +909,70 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect do
               test_migration.migrate(:up)
             end.to_not output(/quote_default_expression/m).to_stdout
+          end
+
+          it "allows setting a constant _default value when the column was added in a previous migration" do
+            migration_1 = Class.new(migration_klass) do
+              define_method(:up) do
+                unsafe_create_table :foos
+                safe_add_column :foos, :bar, :text
+              end
+            end
+            migration_2 = Class.new(migration_klass) do
+              define_method(:up) do
+                safe_change_column_default :foos, :bar, "bogus"
+              end
+            end
+
+            migration_1.suppress_messages { migration_1.migrate(:up) }
+
+            expect do
+              migration_2.suppress_messages { migration_2.migrate(:up) }
+            end.not_to raise_error
+          end
+
+          describe "when not configured to disallow two-step new column and adding default" do
+            it "allows setting a constant default value on Postgres 11+ when the column was added in the same migration" do
+              migration = Class.new(migration_klass) do
+                define_method(:up) do
+                  unsafe_create_table :foos
+                  safe_add_column :foos, :bar, :text
+                  safe_change_column_default :foos, :bar, "bogus"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.not_to raise_error
+            end
+          end
+
+          describe "when configured to disallow two-step new column and adding default" do
+            before(:each) do
+              allow(PgHaMigrations.config)
+                .to receive(:prefer_single_step_column_addition_with_default)
+                .and_return(true)
+            end
+
+            it "disallows setting a constant default value on Postgres 11+ when the column was added in the same migration" do
+              migration = Class.new(migration_klass) do
+                define_method(:up) do
+                  unsafe_create_table :foos
+                  safe_add_column :foos, :bar, :text
+                  safe_change_column_default :foos, :bar, "bogus"
+                end
+              end
+
+              if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+                expect do
+                  migration.suppress_messages { migration.migrate(:up) }
+                end.to raise_error PgHaMigrations::BestPracticeError
+              else
+                expect do
+                  migration.suppress_messages { migration.migrate(:up) }
+                end.not_to raise_error
+              end
+            end
           end
         end
 

@@ -8,14 +8,16 @@ module PgHaMigrations
   Config = Struct.new(
     :disable_default_migration_methods,
     :check_for_dependent_objects,
-    :allow_force_create_table
+    :allow_force_create_table,
+    :prefer_single_step_column_addition_with_default
   )
 
   def self.config
     @config ||= Config.new(
       true,
       false,
-      true
+      true,
+      false
     )
   end
 
@@ -34,6 +36,12 @@ module PgHaMigrations
   # Invalid migrations are operations which we expect to not function
   # as expected or get the schema into an inconsistent state
   InvalidMigrationError = Class.new(Exception)
+
+  # Operations violating a best practice, but not actually unsafe will
+  # raise this error. For example, adding a column without a default and
+  # then setting its default in a second action in a single migration
+  # isn't our documented best practice and will raise this error.
+  BestPracticeError = Class.new(Exception)
 
   # Unsupported migrations use ActiveRecord::Migration features that
   # we don't support, and therefore will likely have unexpected behavior.
