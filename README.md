@@ -274,8 +274,8 @@ end
 
 - `disable_default_migration_methods`: If true, the default implementations of DDL changes in `ActiveRecord::Migration` and the PostgreSQL adapter will be overridden by implementations that raise a `PgHaMigrations::UnsafeMigrationError`. Default: `true`
 - `check_for_dependent_objects`: If true, some `unsafe_*` migration methods will raise a `PgHaMigrations::UnsafeMigrationError` if any dependent objects exist. Default: `false`
-- `prefer_single_step_column_addition_with_default`: If `true`, raise an error when adding a column and separately setting a constant default value for that column in the same migration.
-- 'allow_force_create_table`: If false, the `force: true` option to ActiveRecord's `create_table` method is disallowed. Default: `true`.
+- `prefer_single_step_column_addition_with_default`: If `true`, raise an error when adding a column and separately setting a constant default value for that column in the same migration. Default: `false`
+- 'allow_force_create_table`: If false, the `force: true` option to ActiveRecord's `create_table` method is disallowed. Default: `true`
 
 ### Rake Tasks
 
