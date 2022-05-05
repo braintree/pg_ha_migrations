@@ -16,6 +16,21 @@ RSpec.describe PgHaMigrations::SafeStatements do
     end
   end
 
+  def pool_config
+    if ActiveRecord.gem_version >= Gem::Version.new("7.0")
+      ActiveRecord::ConnectionAdapters::PoolConfig.new(
+        ActiveRecord::Base,
+        ActiveRecord::Base.connection_pool.db_config,
+        ActiveRecord::Base.current_role,
+        ActiveRecord::Base.current_shard
+      )
+    elsif ActiveRecord.gem_version >= Gem::Version.new("6.1")
+      ActiveRecord::ConnectionAdapters::PoolConfig.new(ActiveRecord::Base, ActiveRecord::Base.connection_pool.db_config)
+    else
+      ActiveRecord::Base.connection_pool.spec
+    end
+  end
+
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
     describe migration_klass do
       it "can be used as a migration class" do
@@ -1555,13 +1570,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "doesn't acquire a lock which prevents concurrent reads and writes" do
-            config = if ActiveRecord.gem_version >= Gem::Version.new("6.1")
-              ActiveRecord::ConnectionAdapters::PoolConfig.new(ActiveRecord::Base, ActiveRecord::Base.connection_pool.db_config)
-            else
-              ActiveRecord::Base.connection_pool.spec
-            end
-
-            alternate_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(config)
+            alternate_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(pool_config)
             alternate_connection = alternate_connection_pool.connection
 
             alternate_connection.execute("BEGIN")
@@ -1872,12 +1881,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
         ["bogus_table", :bogus_table].each do |table_name|
           describe "#safely_acquire_lock_for_table with table_name of type #{table_name.class.name}" do
             let(:alternate_connection_pool) do
-              config = if ActiveRecord.gem_version >= Gem::Version.new("6.1")
-                ActiveRecord::ConnectionAdapters::PoolConfig.new(ActiveRecord::Base, ActiveRecord::Base.connection_pool.db_config)
-              else
-                ActiveRecord::Base.connection_pool.spec
-              end
-              ActiveRecord::ConnectionAdapters::ConnectionPool.new(config)
+              ActiveRecord::ConnectionAdapters::ConnectionPool.new(pool_config)
             end
             let(:alternate_connection) do
               alternate_connection_pool.connection

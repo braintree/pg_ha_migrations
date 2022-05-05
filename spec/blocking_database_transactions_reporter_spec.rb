@@ -141,7 +141,7 @@ RSpec.describe PgHaMigrations::BlockingDatabaseTransactionsReporter do
     end
 
     it "ignores databases besides the one being queried" do
-      use_rails_6_1_method = !(ActiveRecord::VERSION::MAJOR < 6 || (ActiveRecord::VERSION::MAJOR == 6 && ActiveRecord::VERSION::MINOR == 0))
+      use_rails_6_1_method = ActiveRecord.gem_version >= Gem::Version.new("6.1")
       original_db_config_hash = if use_rails_6_1_method
         ActiveRecord::Base
           .configurations
@@ -156,7 +156,17 @@ RSpec.describe PgHaMigrations::BlockingDatabaseTransactionsReporter do
 
       connection_pool_config = if use_rails_6_1_method
         db_config = ActiveRecord::DatabaseConfigurations::HashConfig.new("test", "test postgres", original_db_config_hash)
-        ActiveRecord::ConnectionAdapters::PoolConfig.new(::ActiveRecord::Base, db_config)
+
+        if ActiveRecord.gem_version >= Gem::Version.new("7.0")
+          ActiveRecord::ConnectionAdapters::PoolConfig.new(
+            ActiveRecord::Base,
+            db_config,
+            ActiveRecord::Base.current_role,
+            ActiveRecord::Base.current_shard
+          )
+        else
+          ActiveRecord::ConnectionAdapters::PoolConfig.new(::ActiveRecord::Base, db_config)
+        end
       else
         ActiveRecord::ConnectionAdapters::ConnectionSpecification::Resolver.new({}).spec(original_db_config_hash)
       end
