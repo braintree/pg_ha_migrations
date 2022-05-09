@@ -47,7 +47,12 @@ ActiveRecord::Base.configurations = {
   },
 }
 
-config = ActiveRecord::Base.configurations["test"]
+config =
+  if ActiveRecord::VERSION::MAJOR < 7
+    ActiveRecord::Base.configurations["test"]
+  else
+    ActiveRecord::Base.configurations.configs_for(env_name: "test").first
+  end
 
 # Avoid having to require Rails when the task references `Rails.env`.
 ActiveRecord::Tasks::DatabaseTasks.instance_variable_set('@env', "test")

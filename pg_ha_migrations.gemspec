@@ -32,11 +32,11 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rake", ">= 12.3.3"
   spec.add_development_dependency "rspec", "~> 3.0"
   spec.add_development_dependency "pg"
-  spec.add_development_dependency "db-query-matchers", "~> 0.10.0"
+  spec.add_development_dependency "db-query-matchers", "~> 0.11.0"
   spec.add_development_dependency "pry"
   spec.add_development_dependency "pry-byebug"
   spec.add_development_dependency "appraisal", "~> 2.2.0"
 
-  spec.add_dependency "rails", ">= 5.0", "< 6.2"
+  spec.add_dependency "rails", ">= 5.0", "< 7.1"
   spec.add_dependency "relation_to_struct", ">= 1.5.1"
 end
