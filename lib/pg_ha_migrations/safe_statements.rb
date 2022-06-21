@@ -65,7 +65,7 @@ module PgHaMigrations::SafeStatements
 
   def unsafe_add_column(table, column, type, options = {})
     safely_acquire_lock_for_table(table) do
-      super(table, column, type, options)
+      super(table, column, type, **options)
     end
   end
 
@@ -145,7 +145,7 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_add_concurrent_index(table, columns, options={})
-    unsafe_add_index(table, columns, options.merge(:algorithm => :concurrently))
+    unsafe_add_index(table, columns, **options.merge(:algorithm => :concurrently))
   end
 
   def safe_remove_concurrent_index(table, options={})
@@ -157,7 +157,7 @@ module PgHaMigrations::SafeStatements
     end
     index_size = select_value("SELECT pg_size_pretty(pg_relation_size('#{options[:name]}'))")
     say "Preparing to drop index #{options[:name]} which is #{index_size} on disk..."
-    unsafe_remove_index(table, options.merge(:algorithm => :concurrently))
+    unsafe_remove_index(table, **options.merge(:algorithm => :concurrently))
   end
 
   def safe_set_maintenance_work_mem_gb(gigabytes)

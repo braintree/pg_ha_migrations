@@ -1249,7 +1249,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   t.integer :bar, :limit => 4
                   t.integer :baz, :limit => 4
                 end
-                execute_ancestor_statement(:add_index, :foos, "bar, baz", {:opclass => {:bar => :int4_ops}})
+                execute_ancestor_statement(:add_index, :foos, "bar, baz", **{:opclass => {:bar => :int4_ops}})
               end
             end
             expect do
