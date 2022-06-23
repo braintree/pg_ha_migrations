@@ -9,6 +9,11 @@ jobs:
           - 10
           - 11
           - 12
+        ruby:
+          - 2.6
+          - 2.7
+          - 3.0
+          - 3.1
         gemfile:
           - rails_5.0
           - rails_5.1
@@ -39,5 +44,6 @@ jobs:
       - name: Setup Ruby using .ruby-version file
         uses: ruby/setup-ruby@v1
         with:
+          ruby-version: ${{ matrix.ruby }}
           bundler-cache: true # runs 'bundle install' and caches installed gems automatically
       - run: bundle exec rake spec
