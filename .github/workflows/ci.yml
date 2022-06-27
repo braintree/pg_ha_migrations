@@ -11,8 +11,6 @@ jobs:
           - 12
         ruby:
           - 2.7
-          - 3.0
-          - 3.1
         gemfile:
           - rails_5.0
           - rails_5.1
@@ -20,6 +18,15 @@ jobs:
           - rails_6.0
           - rails_6.1
           - rails_7.0
+        include:
+          - gemfile: rails_6.1
+            ruby: 3.0
+          - gemfile: rails_6.1
+            ruby: 3.1
+          - gemfile: rails_7.0
+            ruby: 3.0
+          - gemfile: rails_7.0
+            ruby: 3.1
     name: PostgreSQL ${{ matrix.pg }}
     runs-on: ubuntu-latest
     env: # $BUNDLE_GEMFILE must be set at the job level, so it is set for all steps
