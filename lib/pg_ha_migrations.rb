@@ -3,6 +3,7 @@ require "rails"
 require "active_record"
 require "active_record/migration"
 require "relation_to_struct"
+require "ruby2_keywords"
 
 module PgHaMigrations
   Config = Struct.new(

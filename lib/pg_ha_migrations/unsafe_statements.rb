@@ -19,6 +19,7 @@ module PgHaMigrations::UnsafeStatements
 
       execute_ancestor_statement(method_name, *args, &block)
     end
+    ruby2_keywords method_name
   end
 
   def self.delegate_unsafe_method_to_migration_base_class(method_name)
@@ -29,6 +30,7 @@ module PgHaMigrations::UnsafeStatements
 
       execute_ancestor_statement(method_name, *args, &block)
     end
+    ruby2_keywords "unsafe_#{method_name}"
   end
 
   delegate_unsafe_method_to_migration_base_class :add_column
@@ -65,7 +67,7 @@ module PgHaMigrations::UnsafeStatements
       raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
     end
 
-    execute_ancestor_statement(:create_table, table, options, &block)
+    execute_ancestor_statement(:create_table, table, **options, &block)
   end
 
   def unsafe_add_index(table, column_names, options = {})
@@ -74,11 +76,10 @@ module PgHaMigrations::UnsafeStatements
       raise PgHaMigrations::InvalidMigrationError, "ActiveRecord drops the :opclass option when supplying a string containing an expression or list of columns; instead either supply an array of columns or include the opclass in the string for each column"
     end
 
-    execute_ancestor_statement(:add_index, table, column_names, options)
+    execute_ancestor_statement(:add_index, table, column_names, **options)
   end
 
-
-  def execute_ancestor_statement(method_name, *args, &block)
+  ruby2_keywords def execute_ancestor_statement(method_name, *args, &block)
     # Dispatching here is a bit complicated: we need to execute the method
     # belonging to the first member of the inheritance chain (besides
     # UnsafeStatements). If don't find the method in the inheritance chain,

@@ -39,4 +39,5 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "rails", ">= 5.0", "< 7.1"
   spec.add_dependency "relation_to_struct", ">= 1.5.1"
+  spec.add_dependency "ruby2_keywords"
 end
