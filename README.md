@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/braintree/pg_ha_migrations.svg?branch=master)](https://travis-ci.org/braintree/pg_ha_migrations/)
 
-We've documented our learned best practices for applying schema changes without downtime in the post [PostgreSQL at Scale: Database Schema Changes Without Downtime](https://medium.com/braintree-product-technology/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680) on the [Braintree Product and Technology Blog](https://medium.com/braintree-product-technology). Many of the approaches we take and choices we've made are explained in much greater depth there than in this README.
+We've documented our learned best practices for applying schema changes without downtime in the post [PostgreSQL at Scale: Database Schema Changes Without Downtime](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680) on the [PayPal Technology Blog](https://medium.com/paypal-tech). Many of the approaches we take and choices we've made are explained in much greater depth there than in this README.
 
 Internally we apply those best practices to our Rails applications through this gem which updates ActiveRecord migrations to clearly delineate safe and unsafe DDL as well as provide safe alternatives where possible.
 
@@ -34,7 +34,7 @@ Or install it yourself as:
 
 ### Rollback
 
-Because we require that ["Rollback strategies do not involve reverting the database schema to its previous version"](https://medium.com/braintree-product-technology/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#360a), PgHaMigrations does not support ActiveRecord's automatic migration rollback capability.
+Because we require that ["Rollback strategies do not involve reverting the database schema to its previous version"](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#360a), PgHaMigrations does not support ActiveRecord's automatic migration rollback capability.
 
 Instead we write all of our migrations with only an `def up` method like:
 
@@ -68,7 +68,7 @@ When `unsafe_*` migration methods support checks of this type you can bypass the
 
 Similarly we believe the `force: true` option to ActiveRecord's `create_table` method is always unsafe, and therefore we disallow it even when calling `unsafe_create_table`. This option won't be enabled by default until 2.0, but you can opt-in by setting `config.allow_force_create_table = false` [in your configuration initializer](#configuration).
 
-[Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/braintree-product-technology/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22). For that reason, this gem [disables DDL transactions](./lib/pg_ha_migrations.rb:8) by default. You can change this by resetting `ActiveRecord::Migration.disable_ddl_transaction` in your application.
+[Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22). For that reason, this gem [disables DDL transactions](./lib/pg_ha_migrations.rb:8) by default. You can change this by resetting `ActiveRecord::Migration.disable_ddl_transaction` in your application.
 
 The following functionality is currently unsupported:
 
