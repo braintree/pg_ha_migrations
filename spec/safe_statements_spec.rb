@@ -2030,6 +2030,36 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(pk).to be_empty
           end
 
+          it "raises when partition key is missing" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <key> to be present")
+          end
+
+          it "raises when partition type is missing" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <type> to be present")
+          end
+
           it "raises when partition type is invalid" do
             migration = Class.new(migration_klass) do
               def up
