@@ -1814,7 +1814,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates hash partition" do
-            skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
+            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
 
             migration = Class.new(migration_klass) do
               def up
