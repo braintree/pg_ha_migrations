@@ -1056,11 +1056,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
               migration.suppress_messages { migration.migrate(:up) }
 
               result = _select_enum_names_and_values
-              expect(result).to eq([
+              expect(result).to contain_exactly(
                 {"name" => "bt_foo_enum", "value" => "one"},
                 {"name" => "bt_foo_enum", "value" => "two"},
                 {"name" => "bt_foo_enum", "value" => "three"},
-              ])
+              )
             end
 
             it "can create a new enum type with symbols for values" do
@@ -1073,11 +1073,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
               migration.suppress_messages { migration.migrate(:up) }
 
               result = _select_enum_names_and_values
-              expect(result).to eq([
+              expect(result).to contain_exactly(
                 {"name" => "bt_foo_enum", "value" => "one"},
                 {"name" => "bt_foo_enum", "value" => "two"},
                 {"name" => "bt_foo_enum", "value" => "three"},
-              ])
+              )
             end
 
             it "can create a new enum type with no values" do
@@ -1118,12 +1118,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
               migration.suppress_messages { migration.migrate(:up) }
 
               result = _select_enum_names_and_values
-              expect(result).to eq([
+              expect(result).to contain_exactly(
                 {"name" => "bt_foo_enum", "value" => "one"},
                 {"name" => "bt_foo_enum", "value" => "two"},
                 {"name" => "bt_foo_enum", "value" => "three"},
                 {"name" => "bt_foo_enum", "value" => "four"},
-              ])
+              )
             end
           end
 
@@ -1140,11 +1140,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration.suppress_messages { migration.migrate(:up) }
 
-              expect(_select_enum_names_and_values).to match_array([
+              expect(_select_enum_names_and_values).to contain_exactly(
                 {"name" => "bt_foo_enum", "value" => "one"},
                 {"name" => "bt_foo_enum", "value" => "two"},
                 {"name" => "bt_foo_enum", "value" => "updated"},
-              ])
+              )
             end
 
             it "raises a helpful error on 9.6" do

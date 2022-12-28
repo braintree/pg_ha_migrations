@@ -11,6 +11,7 @@ jobs:
           - 12
           - 13
           - 14
+          - 15
         ruby:
           - 2.7
         gemfile:
@@ -40,6 +41,9 @@ jobs:
             ruby: 3.0
             pg: 14
           - gemfile: rails_6.1
+            ruby: 3.0
+            pg: 15
+          - gemfile: rails_6.1
             ruby: 3.1
             pg: 9.6
           - gemfile: rails_6.1
@@ -57,6 +61,9 @@ jobs:
           - gemfile: rails_6.1
             ruby: 3.1
             pg: 14
+          - gemfile: rails_6.1
+            ruby: 3.1
+            pg: 15
           - gemfile: rails_7.0
             ruby: 3.0
             pg: 9.6
@@ -76,6 +83,9 @@ jobs:
             ruby: 3.0
             pg: 14
           - gemfile: rails_7.0
+            ruby: 3.0
+            pg: 15
+          - gemfile: rails_7.0
             ruby: 3.1
             pg: 9.6
           - gemfile: rails_7.0
@@ -93,6 +103,9 @@ jobs:
           - gemfile: rails_7.0
             ruby: 3.1
             pg: 14
+          - gemfile: rails_7.0
+            ruby: 3.1
+            pg: 15
     name: PostgreSQL ${{ matrix.pg }}
     runs-on: ubuntu-latest
     env: # $BUNDLE_GEMFILE must be set at the job level, so it is set for all steps
