@@ -1764,6 +1764,323 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "safe_create_partition" do
+          it "creates range partition" do
+            skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
+              SELECT partstrat
+              FROM pg_partitioned_table
+              JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
+              WHERE pg_class.relname = 'foos3'
+            SQL
+
+            expect(partition_strategy).to eq("r")
+          end
+
+          it "creates list partition" do
+            skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :list, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
+              SELECT partstrat
+              FROM pg_partitioned_table
+              JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
+              WHERE pg_class.relname = 'foos3'
+            SQL
+
+            expect(partition_strategy).to eq("l")
+          end
+
+          it "creates hash partition" do
+            skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :hash, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
+              SELECT partstrat
+              FROM pg_partitioned_table
+              JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
+              WHERE pg_class.relname = 'foos3'
+            SQL
+
+            expect(partition_strategy).to eq("h")
+          end
+
+          it "infers pk with defaults and simple key" do
+            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            pk = ActiveRecord::Base.connection.primary_keys("foos3")
+
+            expect(pk).to eq(["id", "created_at"])
+          end
+
+          it "infers pk with different name and simple key" do
+            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: :created_at, primary_key: :pk do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            pk = ActiveRecord::Base.connection.primary_keys("foos3")
+
+            expect(pk).to eq(["pk", "created_at"])
+          end
+
+          it "infers single column pk when used as the partition key" do
+            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: :pk, primary_key: :pk do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            pk = ActiveRecord::Base.connection.primary_keys("foos3")
+
+            expect(pk).to eq(["pk"])
+          end
+
+          it "does not create pk with defaults and complex key" do
+            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: ->{ "(created_at::date)" } do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            pk = ActiveRecord::Base.connection.primary_keys("foos3")
+
+            expect(pk).to be_empty
+          end
+
+          it "infers pk with defaults and composite key" do
+            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: [:created_at, :text_column] do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            pk = ActiveRecord::Base.connection.primary_keys("foos3")
+
+            expect(pk).to eq(["id", "created_at", "text_column"])
+          end
+
+          it "does not create pk when infer_pk is false" do
+            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, infer_pk: false, key: [:created_at, :text_column] do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            pk = ActiveRecord::Base.connection.primary_keys("foos3")
+
+            expect(pk).to be_empty
+          end
+
+          it "does not create pk when id is false" do
+            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, id: false, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            pk = ActiveRecord::Base.connection.primary_keys("foos3")
+
+            expect(pk).to be_empty
+          end
+
+          it "defaults to bigint pk" do
+            skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            columns = ActiveRecord::Base.connection.columns("foos3")
+            id_column = columns.find { |column| column.name == "id" }
+
+            expect(id_column.sql_type).to eq("bigint")
+          end
+
+          it "can override pk type" do
+            skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: :created_at, id: :serial do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            columns = ActiveRecord::Base.connection.columns("foos3")
+            id_column = columns.find { |column| column.name == "id" }
+
+            expect(id_column.sql_type).to eq("integer")
+          end
+
+          it "does not create pk on pg 10" do
+            skip "Only relevant on Postgres 10" if ActiveRecord::Base.connection.postgresql_version < 10_00_00
+            skip "Only relevant on Postgres 10" if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            pk = ActiveRecord::Base.connection.primary_keys("foos3")
+
+            expect(pk).to be_empty
+          end
+
+          it "raises when partition type is invalid" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :garbage, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <type> to be in [:range, :list, :hash]. Received :garbage.")
+          end
+
+          it "raises when pg version < 10" do
+            skip "Only relevant on Postgres < 10" unless ActiveRecord::Base.connection.postgresql_version < 10_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :range, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10")
+          end
+
+          it "raises when creating hash partition on pg 10" do
+            skip "Only relevant on Postgres 10" if ActiveRecord::Base.connection.postgresql_version < 10_00_00
+            skip "Only relevant on Postgres 10" if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partition :foos3, type: :hash, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Hash partitioning not supported on Postgres databases before version 11")
+          end
+        end
+
         describe "#adjust_lock_timeout" do
           let(:table_name) { "bogus_table" }
           let(:migration) { Class.new(migration_klass).new }

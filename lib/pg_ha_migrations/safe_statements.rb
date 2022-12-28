@@ -1,4 +1,6 @@
 module PgHaMigrations::SafeStatements
+  VALID_PARTITION_TYPES = %i[range list hash]
+
   def safe_added_columns_without_default_value
     @safe_added_columns_without_default_value ||= []
   end
@@ -221,6 +223,72 @@ module PgHaMigrations::SafeStatements
       say_with_time "remove_constraint(#{table.inspect}, name: #{name.inspect})" do
         connection.execute(sql)
       end
+    end
+  end
+
+  def safe_create_partition(table, options={}, &block)
+    partition_key = options.fetch(:key) { raise ArgumentError, "Expected <key> to be present" }
+    partition_type = options.fetch(:type) { raise ArgumentError, "Expected <type> to be present" }.to_sym
+    infer_pk = options.fetch(:infer_pk, true)
+
+    unless VALID_PARTITION_TYPES.include?(partition_type)
+      raise ArgumentError, "Expected <type> to be in #{VALID_PARTITION_TYPES}. Received :#{partition_type}."
+    end
+
+    if ActiveRecord::Base.connection.postgresql_version < 10_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10"
+    end
+
+    if partition_type == :hash && ActiveRecord::Base.connection.postgresql_version < 11_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Hash partitioning not supported on Postgres databases before version 11"
+    end
+
+    passthrough_options = options.except(:key, :type, :infer_pk)
+
+    # Newer versions of Rails will set the primary key column to the type :primary_key.
+    # This performs some extra logic that we can't easily undo which causes problems when
+    # trying to inject the partition key into the PK. Now, it would be nice to lookup the
+    # default primary key type instead of simply using :bigserial, but it doesn't appear
+    # that we have access to the Rails configuration from within our migrations:
+    #
+    # [6] pry(#<#<Class:0x000055d69c45f470>>)> Rails.configuration
+    # NoMethodError: undefined method `config' for nil:NilClass
+    if passthrough_options[:id].nil? || passthrough_options[:id] == :primary_key
+      passthrough_options[:id] = :bigserial
+    end
+
+    passthrough_options[:options] = "PARTITION BY #{partition_type.upcase} (#{_quote_partition_key(partition_key)})"
+
+    safe_create_table(table, passthrough_options) do |td|
+      yield(td) if block_given?
+
+      next unless passthrough_options[:id]
+
+      pk_columns = td.columns.each_with_object([]) do |col, arr|
+        if col.respond_to?(:primary_key)
+          next unless col.primary_key
+
+          col.primary_key = false
+        else
+          next unless col.options[:primary_key]
+
+          col.options[:primary_key] = false
+        end
+
+        arr << col.name
+      end
+
+      if infer_pk && !partition_key.is_a?(Proc) && ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+        td.primary_keys(pk_columns.concat(Array.wrap(partition_key)).map(&:to_s).uniq)
+      end
+    end
+  end
+
+  def _quote_partition_key(key)
+    if key.is_a?(Proc)
+      key.call.to_s # very hard to sanitize a complex expression
+    else
+      Array.wrap(key).map { |col| connection.quote_column_name(col) }.join(",")
     end
   end
 
