@@ -220,6 +220,50 @@ Drop any (not just `CHECK`) constraint.
 unsafe_remove_constraint :table, name: :constraint_table_on_column_like_example
 ```
 
+#### safe\_create\_partitioned\_table
+
+Safely create a new partitioned table using [declaritive partitioning](https://www.postgresql.org/docs/15/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE).
+
+```ruby
+# list partitioned table using single column as partition key
+safe_create_partitioned_table :table, type: :list, key: :example_column do |t|
+  t.text :example_column, null: false
+end
+
+# range partitioned table using multiple columns as partition key
+safe_create_partitioned_table :table, type: :range, key: [:example_column_a, :example_column_b] do |t|
+  t.integer :example_column_a, null: false
+  t.integer :example_column_b, null: false
+end
+
+# hash partitioned table using expression as partition key
+safe_create_partitioned_table :table, :type: :hash, key: ->{ "(example_column::date)" } do |t|
+  t.datetime :example_column, null: false
+end
+```
+
+The identifier column is `bigserial` by default. This can be overridden, as you would in `safe_create_table`, by setting the `id` argument:
+
+```ruby
+safe_create_partitioned_table :table, id: :serial, type: :range, key: :example_column do |t|
+  t.date :example_column, null: false
+end
+```
+
+In PostgreSQL 11+, primary key constraints are supported on partitioned tables given the partition key is included. On supported versions, the primary key is inferred by default. This functionality can be disabled by setting the `infer_primary_key` argument to `false`:
+
+```ruby
+# primary key will be (id, example_column)
+safe_create_partitioned_table :table, type: :range, key: :example_column do |t|
+  t.date :example_column, null: false
+end
+
+# primary key will not be created
+safe_create_partitioned_table :table, type: :range, key: :example_column, infer_primary_key: false do |t|
+  t.date :example_column, null: false
+end
+```
+
 ### Utilities
 
 #### safely\_acquire\_lock\_for\_table
