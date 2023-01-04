@@ -227,8 +227,10 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_create_partitioned_table(table, key:, type:, infer_primary_key: true, **options, &block)
+    raise ArgumentError, "Expected <key> to be present" unless key.present?
+
     unless VALID_PARTITION_TYPES.include?(type)
-      raise ArgumentError, "Expected <type> to be in #{VALID_PARTITION_TYPES}. Received :#{type}."
+      raise ArgumentError, "Expected <type> to be symbol in #{VALID_PARTITION_TYPES}"
     end
 
     if ActiveRecord::Base.connection.postgresql_version < 10_00_00

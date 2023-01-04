@@ -242,7 +242,7 @@ safe_create_partitioned_table :table, :type: :hash, key: ->{ "(example_column::d
 end
 ```
 
-The identifier column is `bigserial` by default. This can be overridden, as you would in `safe_create_table`, by setting the `id` argument:
+The identifier column type is `bigserial` by default. This can be overridden, as you would in `safe_create_table`, by setting the `id` argument:
 
 ```ruby
 safe_create_partitioned_table :table, id: :serial, type: :range, key: :example_column do |t|

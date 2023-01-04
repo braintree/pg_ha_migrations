@@ -2042,7 +2042,22 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect do
               migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(ArgumentError, "Expected <type> to be in [:range, :list, :hash]. Received :garbage.")
+            end.to raise_error(ArgumentError, "Expected <type> to be symbol in [:range, :list, :hash]")
+          end
+
+          it "raises when partition key is not present" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partitioned_table :foos3, type: :range, key: nil do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <key> to be present")
           end
 
           it "raises when pg version < 10" do
