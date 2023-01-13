@@ -1,4 +1,6 @@
 module PgHaMigrations::SafeStatements
+  VALID_PARTITION_TYPES = %i[range list hash]
+
   def safe_added_columns_without_default_value
     @safe_added_columns_without_default_value ||= []
   end
@@ -220,6 +222,72 @@ module PgHaMigrations::SafeStatements
     safely_acquire_lock_for_table(table) do
       say_with_time "remove_constraint(#{table.inspect}, name: #{name.inspect})" do
         connection.execute(sql)
+      end
+    end
+  end
+
+  def safe_create_partitioned_table(table, key:, type:, infer_primary_key: nil, **options, &block)
+    raise ArgumentError, "Expected <key> to be present" unless key.present?
+
+    unless VALID_PARTITION_TYPES.include?(type)
+      raise ArgumentError, "Expected <type> to be symbol in #{VALID_PARTITION_TYPES}"
+    end
+
+    if ActiveRecord::Base.connection.postgresql_version < 10_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10"
+    end
+
+    if type == :hash && ActiveRecord::Base.connection.postgresql_version < 11_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Hash partitioning not supported on Postgres databases before version 11"
+    end
+
+    if infer_primary_key.nil?
+      infer_primary_key = PgHaMigrations.config.infer_primary_key_on_partitioned_tables
+    end
+
+    # Newer versions of Rails will set the primary key column to the type :primary_key.
+    # This performs some extra logic that we can't easily undo which causes problems when
+    # trying to inject the partition key into the PK. Now, it would be nice to lookup the
+    # default primary key type instead of simply using :bigserial, but it doesn't appear
+    # that we have access to the Rails configuration from within our migrations.
+    if options[:id].nil? || options[:id] == :primary_key
+      options[:id] = :bigserial
+    end
+
+    quoted_partition_key = if key.is_a?(Proc)
+      # Lambda syntax, like in other migration methods, implies an expression that
+      # cannot be easily sanitized.
+      #
+      # e.g ->{ "(created_at::date)" }
+      key.call.to_s
+    else
+      # Otherwise, assume key is a column name or array of column names
+      Array.wrap(key).map { |col| connection.quote_column_name(col) }.join(",")
+    end
+
+    options[:options] = "PARTITION BY #{type.upcase} (#{quoted_partition_key})"
+
+    safe_create_table(table, options) do |td|
+      block.call(td) if block
+
+      next unless options[:id]
+
+      pk_columns = td.columns.each_with_object([]) do |col, arr|
+        if col.respond_to?(:primary_key)
+          next unless col.primary_key
+
+          col.primary_key = false
+        else
+          next unless col.options[:primary_key]
+
+          col.options[:primary_key] = false
+        end
+
+        arr << col.name
+      end
+
+      if infer_primary_key && !key.is_a?(Proc) && ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+        td.primary_keys(pk_columns.concat(Array.wrap(key)).map(&:to_s).uniq)
       end
     end
   end

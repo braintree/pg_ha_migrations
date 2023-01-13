@@ -10,7 +10,8 @@ module PgHaMigrations
     :disable_default_migration_methods,
     :check_for_dependent_objects,
     :allow_force_create_table,
-    :prefer_single_step_column_addition_with_default
+    :prefer_single_step_column_addition_with_default,
+    :infer_primary_key_on_partitioned_tables,
   )
 
   def self.config
@@ -18,7 +19,8 @@ module PgHaMigrations
       true,
       false,
       true,
-      false
+      false,
+      true
     )
   end
 

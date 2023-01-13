@@ -26,7 +26,8 @@ RSpec.configure do |config|
   end
 
   config.after(:each) do
-    ActiveRecord::Base.connection.tables.each do |table|
+    # ActiveRecord::Base.connection.tables does not include partitioned tables in Rails 5.1
+    ActiveRecord::Base.connection.select_values("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").each do |table|
       ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
     end
     ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|

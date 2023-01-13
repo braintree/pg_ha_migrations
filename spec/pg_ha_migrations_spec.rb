@@ -55,6 +55,34 @@ RSpec.describe PgHaMigrations do
         expect(PgHaMigrations.config.allow_force_create_table).to be(false)
       end
     end
+
+    context "prefer_single_step_column_addition_with_default" do
+      it "is set to false by default" do
+        expect(PgHaMigrations.config.prefer_single_step_column_addition_with_default).to be(false)
+      end
+
+      it "can be overriden to true" do
+        PgHaMigrations.configure do |config|
+          config.prefer_single_step_column_addition_with_default = true
+        end
+
+        expect(PgHaMigrations.config.prefer_single_step_column_addition_with_default).to be(true)
+      end
+    end
+
+    context "infer_primary_key_on_partitioned_tables" do
+      it "is set to true by default" do
+        expect(PgHaMigrations.config.infer_primary_key_on_partitioned_tables).to be(true)
+      end
+
+      it "can be overriden to false" do
+        PgHaMigrations.configure do |config|
+          config.infer_primary_key_on_partitioned_tables = false
+        end
+
+        expect(PgHaMigrations.config.infer_primary_key_on_partitioned_tables).to be(false)
+      end
+    end
   end
 
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
