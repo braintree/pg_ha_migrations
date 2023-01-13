@@ -226,7 +226,7 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def safe_create_partitioned_table(table, key:, type:, infer_primary_key: true, **options, &block)
+  def safe_create_partitioned_table(table, key:, type:, infer_primary_key: nil, **options, &block)
     raise ArgumentError, "Expected <key> to be present" unless key.present?
 
     unless VALID_PARTITION_TYPES.include?(type)
@@ -239,6 +239,10 @@ module PgHaMigrations::SafeStatements
 
     if type == :hash && ActiveRecord::Base.connection.postgresql_version < 11_00_00
       raise PgHaMigrations::InvalidMigrationError, "Hash partitioning not supported on Postgres databases before version 11"
+    end
+
+    if infer_primary_key.nil?
+      infer_primary_key = PgHaMigrations.config.infer_primary_key_on_partitioned_tables
     end
 
     # Newer versions of Rails will set the primary key column to the type :primary_key.

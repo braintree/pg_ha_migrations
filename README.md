@@ -222,7 +222,7 @@ unsafe_remove_constraint :table, name: :constraint_table_on_column_like_example
 
 #### safe\_create\_partitioned\_table
 
-Safely create a new partitioned table using [declaritive partitioning](https://www.postgresql.org/docs/15/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE).
+Safely create a new partitioned table using [declaritive partitioning](https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE).
 
 ```ruby
 # list partitioned table using single column as partition key
@@ -250,7 +250,7 @@ safe_create_partitioned_table :table, id: :serial, type: :range, key: :example_c
 end
 ```
 
-In PostgreSQL 11+, primary key constraints are supported on partitioned tables given the partition key is included. On supported versions, the primary key is inferred by default. This functionality can be disabled by setting the `infer_primary_key` argument to `false`:
+In PostgreSQL 11+, primary key constraints are supported on partitioned tables given the partition key is included. On supported versions, the primary key is inferred by default (see [available options](#available-options)). This functionality can be overridden by setting the `infer_primary_key` argument.
 
 ```ruby
 # primary key will be (id, example_column)
@@ -318,8 +318,9 @@ end
 
 - `disable_default_migration_methods`: If true, the default implementations of DDL changes in `ActiveRecord::Migration` and the PostgreSQL adapter will be overridden by implementations that raise a `PgHaMigrations::UnsafeMigrationError`. Default: `true`
 - `check_for_dependent_objects`: If true, some `unsafe_*` migration methods will raise a `PgHaMigrations::UnsafeMigrationError` if any dependent objects exist. Default: `false`
-- `prefer_single_step_column_addition_with_default`: If `true`, raise an error when adding a column and separately setting a constant default value for that column in the same migration. Default: `false`
+- `prefer_single_step_column_addition_with_default`: If true, raise an error when adding a column and separately setting a constant default value for that column in the same migration. Default: `false`
 - `allow_force_create_table`: If false, the `force: true` option to ActiveRecord's `create_table` method is disallowed. Default: `true`
+- `infer_primary_key_on_partitioned_tables`: If true, the primary key for partitioned tables will be inferred on PostgreSQL 11+ databases (identifier column + partition key columns). Default: `true`
 
 ### Rake Tasks
 
