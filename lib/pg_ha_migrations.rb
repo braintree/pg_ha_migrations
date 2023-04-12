@@ -44,7 +44,7 @@ module PgHaMigrations
   # raise this error. For example, adding a column without a default and
   # then setting its default in a second action in a single migration
   # isn't our documented best practice and will raise this error.
-  BestPracticeError = Class.new(Exception)
+  BestPracticeError = Class.new(StandardError)
 
   # Unsupported migrations use ActiveRecord::Migration features that
   # we don't support, and therefore will likely have unexpected behavior.
