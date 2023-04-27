@@ -1,6 +1,6 @@
 # PgHaMigrations
 
-[![Build Status](https://travis-ci.org/braintree/pg_ha_migrations.svg?branch=master)](https://travis-ci.org/braintree/pg_ha_migrations/)
+[![Build Status](https://github.com/braintree/pg_ha_migrations/actions/workflows/ci.yml/badge.svg)](https://github.com/braintree/pg_ha_migrations/actions/workflows/ci.yml?query=branch%3Amaster+)
 
 We've documented our learned best practices for applying schema changes without downtime in the post [PostgreSQL at Scale: Database Schema Changes Without Downtime](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680) on the [PayPal Technology Blog](https://medium.com/paypal-tech). Many of the approaches we take and choices we've made are explained in much greater depth there than in this README.
 
