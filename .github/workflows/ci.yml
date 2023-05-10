@@ -111,21 +111,14 @@ jobs:
     env: # $BUNDLE_GEMFILE must be set at the job level, so it is set for all steps
       BUNDLE_GEMFILE: gemfiles/${{ matrix.gemfile }}.gemfile
       ImageOS: ubuntu20
-    services:
-      postgresql:
-        image: postgres:${{ matrix.pg }}
-        env:
-          POSTGRES_PASSWORD: postgres
-        # Set health checks to wait until postgres has started
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+      - name: Build postgres image and start the container
+        uses: isbang/compose-action@v1.4.1
+        with:
+          up-flags: "--build"
+        env:
+          PGVERSION: ${{ matrix.pg }}
       - name: Setup Ruby using .ruby-version file
         uses: ruby/setup-ruby@v1
         with:
