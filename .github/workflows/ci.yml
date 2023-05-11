@@ -114,9 +114,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build postgres image and start the container
-        uses: isbang/compose-action@v1.4.1
-        with:
-          up-flags: "--build"
+        run: docker-compose up -d --build
         env:
           PGVERSION: ${{ matrix.pg }}
       - name: Setup Ruby using .ruby-version file
