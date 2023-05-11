@@ -563,7 +563,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "safe_add_column" do
-          it "allows setting a default on Postgres 11+ and forbids it otherwise" do
+          it "allows setting a default on Postgres 11+" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
@@ -572,14 +572,24 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-              migration.suppress_messages { migration.migrate(:up) }
-              expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
-            else
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error PgHaMigrations::UnsafeMigrationError
+            migration.suppress_messages { migration.migrate(:up) }
+            expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
+          end
+
+          it "raises error setting a default on Postgres < 11" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
+                safe_add_column :foos, :bar, :text, :default => "baz"
+              end
             end
+
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(10_00_00)
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error PgHaMigrations::UnsafeMigrationError
           end
 
           [:string, :text, :enum, :binary].each do |type|
@@ -1129,8 +1139,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
           describe "unsafe_rename_enum_value" do
             it "renames a enum value on 10+" do
-              skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
-
               migration = Class.new(migration_klass) do
                 def up
                   unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
@@ -1148,9 +1156,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises a helpful error on 9.6" do
-              if ActiveRecord::Base.connection.postgresql_version >= 10_00_00
-                allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
-              end
+              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -1239,10 +1245,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "demonstrates ActiveRecord still throws away per-column options when passed string" do
-            if (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR <= 1) || ActiveRecord::VERSION::MAJOR == 4
-              skip "The :opclass option is only supported on ActiveRecord 5.2+"
-            end
-
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos do |t|
@@ -1775,21 +1777,33 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            if ActiveRecord::Base.connection.postgresql_version < 10_00_00
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10")
-            else
-              migration.suppress_messages { migration.migrate(:up) }
+            migration.suppress_messages { migration.migrate(:up) }
 
-              partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
-                SELECT partstrat
-                FROM pg_partitioned_table
-                JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
-                WHERE pg_class.relname = 'foos3'
-              SQL
-              expect(partition_strategy).to eq("r")
+            partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
+              SELECT partstrat
+              FROM pg_partitioned_table
+              JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
+              WHERE pg_class.relname = 'foos3'
+            SQL
+
+            expect(partition_strategy).to eq("r")
+          end
+
+          it "raises error creating range partition on Postgres < 10" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
             end
+
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10")
           end
 
           it "creates list partition on supported versions" do
@@ -1802,22 +1816,33 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            if ActiveRecord::Base.connection.postgresql_version < 10_00_00
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10")
-            else
-              migration.suppress_messages { migration.migrate(:up) }
+            migration.suppress_messages { migration.migrate(:up) }
 
-              partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
-                SELECT partstrat
-                FROM pg_partitioned_table
-                JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
-                WHERE pg_class.relname = 'foos3'
-              SQL
+            partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
+              SELECT partstrat
+              FROM pg_partitioned_table
+              JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
+              WHERE pg_class.relname = 'foos3'
+            SQL
 
-              expect(partition_strategy).to eq("l")
+            expect(partition_strategy).to eq("l")
+          end
+
+          it "raises error creating list partition on Postgres < 10" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partitioned_table :foos3, type: :list, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
             end
+
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10")
           end
 
           it "creates hash partition on supported versions" do
@@ -1830,31 +1855,36 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            if ActiveRecord::Base.connection.postgresql_version < 10_00_00
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10")
-            elsif ActiveRecord::Base.connection.postgresql_version < 11_00_00
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Hash partitioning not supported on Postgres databases before version 11")
-            else
-              migration.suppress_messages { migration.migrate(:up) }
+            migration.suppress_messages { migration.migrate(:up) }
 
-              partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
-                SELECT partstrat
-                FROM pg_partitioned_table
-                JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
-                WHERE pg_class.relname = 'foos3'
-              SQL
+            partition_strategy = ActiveRecord::Base.connection.select_value(<<~SQL)
+              SELECT partstrat
+              FROM pg_partitioned_table
+              JOIN pg_class on pg_partitioned_table.partrelid = pg_class.oid
+              WHERE pg_class.relname = 'foos3'
+            SQL
 
-              expect(partition_strategy).to eq("h")
+            expect(partition_strategy).to eq("h")
+          end
+
+          it "raises error creating hash partition on Postgres < 11" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_partitioned_table :foos3, type: :hash, key: :created_at do |t|
+                  t.timestamps :null => false
+                  t.text :text_column
+                end
+              end
             end
+
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(10_00_00)
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Hash partitioning not supported on Postgres databases before version 11")
           end
 
           it "infers pk with defaults and simple key" do
-            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
@@ -1872,8 +1902,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "infers pk with different name and simple key" do
-            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, key: :created_at, primary_key: :pk do |t|
@@ -1891,8 +1919,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "infers single column pk when used as the partition key" do
-            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, key: :pk, primary_key: :pk do |t|
@@ -1910,8 +1936,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "does not create pk with defaults and complex key" do
-            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, key: ->{ "(created_at::date)" } do |t|
@@ -1929,8 +1953,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "infers pk with defaults and composite key" do
-            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, key: [:created_at, :text_column] do |t|
@@ -1948,8 +1970,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "does not create pk when infer_primary_key is false" do
-            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, infer_primary_key: false, key: [:created_at, :text_column] do |t|
@@ -1967,8 +1987,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "does not create pk when infer_primary_key_on_partitioned_tables is false" do
-            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-
             allow(PgHaMigrations.config)
               .to receive(:infer_primary_key_on_partitioned_tables)
               .and_return(false)
@@ -1990,8 +2008,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "does not create pk when id is false" do
-            skip "Only relevant on Postgres 11+" unless ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, id: false, key: :created_at do |t|
@@ -2009,8 +2025,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "defaults to bigint pk" do
-            skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
@@ -2029,8 +2043,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "can override pk type" do
-            skip "Only relevant on Postgres 10+" unless ActiveRecord::Base.connection.postgresql_version >= 10_00_00
-
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, key: :created_at, id: :serial do |t|
@@ -2048,9 +2060,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(id_column.sql_type).to eq("integer")
           end
 
-          it "does not create pk on pg 10" do
-            skip "Only relevant on Postgres 10" if ActiveRecord::Base.connection.postgresql_version < 10_00_00
-            skip "Only relevant on Postgres 10" if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+          it "does not create pk on Postgres 10" do
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(10_00_00)
 
             migration = Class.new(migration_klass) do
               def up
@@ -2104,8 +2115,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           let(:migration) { Class.new(migration_klass).new }
 
           before(:each) do
-            skip "Only relevant on Postgres 9.3+" unless ActiveRecord::Base.connection.postgresql_version >= 9_03_00
-
             ActiveRecord::Base.connection.execute("CREATE TABLE #{table_name}(pk SERIAL, i INTEGER)")
           end
 
