@@ -17,24 +17,35 @@ RSpec.configure do |config|
     server_version = ActiveRecord::Base.connection.select_value("SHOW server_version")
     puts "DEBUG: Connecting to Postgres server version #{server_version}"
 
+    ActiveRecord::Base.connection.execute("DROP EXTENSION IF EXISTS pg_partman CASCADE")
+
+    # Drop parent partition tables first to automatically drop children
+    ActiveRecord::Base.connection.select_values("SELECT c.relname FROM pg_class c JOIN pg_partitioned_table p on c.oid = p.partrelid").each do |table|
+      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
+    end
+
     ActiveRecord::Base.connection.tables.each do |table|
       ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
     end
     ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
       ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
     end
-    ActiveRecord::Base.connection.execute("DROP EXTENSION IF EXISTS pg_partman CASCADE")
   end
 
   config.after(:each) do
-    # ActiveRecord::Base.connection.tables does not include partitioned tables in Rails 5.1
-    ActiveRecord::Base.connection.select_values("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").each do |table|
+    ActiveRecord::Base.connection.execute("DROP EXTENSION IF EXISTS pg_partman CASCADE")
+
+    # Drop parent partition tables first to automatically drop children
+    ActiveRecord::Base.connection.select_values("SELECT c.relname FROM pg_class c JOIN pg_partitioned_table p on c.oid = p.partrelid").each do |table|
+      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
+    end
+
+    ActiveRecord::Base.connection.tables.each do |table|
       ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
     end
     ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
       ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
     end
-    ActiveRecord::Base.connection.execute("DROP EXTENSION IF EXISTS pg_partman CASCADE")
   end
 end
 
@@ -63,20 +74,3 @@ ActiveRecord::Tasks::DatabaseTasks.instance_variable_set('@env', "test")
 ActiveRecord::Tasks::DatabaseTasks.drop_current
 ActiveRecord::Tasks::DatabaseTasks.create_current
 ActiveRecord::Base.establish_connection(config)
-
-ActiveRecord::Base.connection.execute(<<~SQL)
-  CREATE SCHEMA IF NOT EXISTS partman;
-  DROP ROLE IF EXISTS partman;
-  CREATE ROLE partman WITH LOGIN;
-  GRANT ALL ON SCHEMA partman TO partman;
-  GRANT ALL ON SCHEMA public TO partman;
-  GRANT ALL ON ALL TABLES IN SCHEMA partman TO partman;
-  GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA partman TO partman;
-  GRANT CREATE ON DATABASE pg_ha_migrations_test TO partman;
-SQL
-
-if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-  ActiveRecord::Base.connection.execute(<<~SQL)
-    GRANT EXECUTE ON ALL PROCEDURES IN SCHEMA partman TO partman;
-  SQL
-end
