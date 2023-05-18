@@ -1,0 +1,11 @@
+version: "3.3"
+services:
+  db:
+    build:
+      context: .
+      args:
+        - PGVERSION=${PGVERSION:-15}
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=${PGPASSWORD:-postgres}
