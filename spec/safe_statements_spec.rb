@@ -2110,6 +2110,555 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "safe_partman_create_parent" do
+          context "when extension not installed" do
+            it "raises error" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "The pg_partman extension is not installed")
+            end
+          end
+
+          context "when extension installed" do
+            before do
+              ActiveRecord::Base.connection.execute("CREATE EXTENSION pg_partman")
+
+              PgHaMigrations::PartmanConfig.schema = "public"
+            end
+
+            it "creates child partitions with defaults" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
+                SELECT child.relname
+                FROM pg_inherits
+                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+                WHERE parent.relname = 'foos3'
+              SQL
+
+              expect(child_tables.size).to eq(10)
+              expect(child_tables).to include("foos3_default")
+
+              part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+
+              expect(part_config).to have_attributes(
+                automatic_maintenance: "on",
+                control: "created_at",
+                jobmon: true,
+                partition_interval: "P1M",
+                partition_type: "native",
+                premake: 4,
+                template_table: "public.template_public_foos3",
+              )
+            end
+          end
+
+          context "when extension installed in different schema" do
+            before do
+              ActiveRecord::Base.connection.execute(<<~SQL)
+                CREATE SCHEMA partman;
+                CREATE EXTENSION pg_partman SCHEMA partman;
+              SQL
+
+              PgHaMigrations::PartmanConfig.schema = "partman"
+            end
+
+            it "creates child partitions with defaults" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
+                SELECT child.relname
+                FROM pg_inherits
+                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+                WHERE parent.relname = 'foos3'
+              SQL
+
+              expect(child_tables.size).to eq(10)
+              expect(child_tables).to include("foos3_default")
+
+              part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+
+              expect(part_config).to have_attributes(
+                automatic_maintenance: "on",
+                control: "created_at",
+                jobmon: true,
+                partition_interval: "P1M",
+                partition_type: "native",
+                premake: 4,
+                template_table: "partman.template_public_foos3",
+              )
+            end
+
+            it "creates child partitions with custom options" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.integer :created_at, :null => false
+                    t.text :text_column
+                  end
+
+                  safe_create_table :foos3_template, id: false do |t|
+                    t.text :text_column, index: { unique: true }
+                  end
+
+                  if ActiveRecord::VERSION::MAJOR < 7
+                    start_partition = Time.current.to_s(:db)
+                  else
+                    start_partition = Time.current.to_fs(:db)
+                  end
+
+                  safe_partman_create_parent :foos3,
+                    key: :created_at,
+                    interval: "weekly",
+                    template_table: :foos3_template,
+                    premake: 1,
+                    automatic_maintenance: "off",
+                    start_partition: start_partition,
+                    epoch: "seconds",
+                    jobmon: false
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
+                SELECT child.relname
+                FROM pg_inherits
+                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+                WHERE parent.relname = 'foos3'
+              SQL
+
+              expect(child_tables.size).to eq(3)
+              expect(child_tables).to include("foos3_default")
+
+              # Make sure child tables inherit unique index from template table
+              child_tables.each do |table|
+                unique_index = ActiveRecord::Base.connection.select_value(<<~SQL)
+                  SELECT 1 FROM pg_indexes
+                  WHERE tablename = '#{table}' AND indexname = '#{table}_text_column_idx'
+                SQL
+
+                expect(unique_index).to eq(1)
+              end
+
+              part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+
+              expect(part_config).to have_attributes(
+                automatic_maintenance: "off",
+                control: "created_at",
+                jobmon: false,
+                partition_interval: "P7D",
+                partition_type: "native",
+                premake: 1,
+                template_table: "public.foos3_template",
+              )
+            end
+
+            it "raises error when key not present" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_create_parent :foos3, key: nil, interval: "monthly"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ArgumentError, "Expected <key> to be present")
+            end
+
+            it "raises error when interval not present" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_create_parent :foos3, key: :created_at, interval: nil
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ArgumentError, "Expected <interval> to be present")
+            end
+
+            it "raises error when unsupported optional arg is supplied" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly", foo: "bar"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ArgumentError, "Unrecognized optional argument(s): [:foo]")
+            end
+
+            it "raises error when on Postgres < 10" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
+
+              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10")
+            end
+
+            it "raises error when parent table does not exist" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3 in search path")
+            end
+
+            it "raises error when parent table does not exist and fully qualified name provided" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_create_parent "public.foos3", key: :created_at, interval: "monthly"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ActiveRecord::StatementInvalid, /Please create parent table first: public.foos3/)
+            end
+
+            it "raises error when template table does not exist" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly", template_table: :foos3_template
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3_template in search path")
+            end
+
+            it "raises error when template table does not exist and fully qualified name provided" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly", template_table: "public.foos3_template"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ActiveRecord::StatementInvalid, /Please create template table first/)
+            end
+
+            it "raises error when parent table is not partitioned" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_table :foos3 do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ActiveRecord::StatementInvalid, /you must have created the given parent table as ranged \(not list\) partitioned already/)
+            end
+          end
+        end
+
+        describe "safe_partman_update_config" do
+          context "when extension not installed" do
+            it "raises error" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_update_config :foos3, inherit_privileges: true
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "The pg_partman extension is not installed")
+            end
+          end
+
+          context "when extension installed" do
+            before do
+              ActiveRecord::Base.connection.execute("CREATE EXTENSION pg_partman")
+
+              PgHaMigrations::PartmanConfig.schema = "public"
+            end
+
+            it "updates values" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+
+                  safe_partman_update_config :foos3, inherit_privileges: true, infinite_time_partitions: true
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+
+              expect(part_config).to have_attributes(
+                inherit_privileges: true,
+                infinite_time_partitions: true,
+              )
+            end
+
+            it "raises error when table does not exist" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_update_config :foos3, inherit_privileges: true
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3 in search path")
+            end
+
+            it "raises error when table exists but isn't configured with partman" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_update_config :foos3, inherit_privileges: true
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ActiveRecord::RecordNotFound, "Couldn't find PgHaMigrations::PartmanConfig with 'parent_table'=public.foos3")
+            end
+
+            it "raises error when unsupported arg is supplied" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_update_config :foos3, foo: "bar"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ArgumentError, "Unrecognized argument(s): [:foo]")
+            end
+          end
+        end
+
+        describe "safe_partman_reapply_privileges" do
+          context "when extension not installed" do
+            it "raises error" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_reapply_privileges :foos3
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "The pg_partman extension is not installed")
+            end
+          end
+
+          context "when extension installed" do
+            before do
+              ActiveRecord::Base.connection.execute("CREATE EXTENSION pg_partman")
+
+              PgHaMigrations::PartmanConfig.schema = "public"
+            end
+
+            it "applies privileges to new and existing child tables" do
+              migration1 = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+
+                  unsafe_execute(<<~SQL)
+                    CREATE ROLE foo NOLOGIN;
+                    GRANT SELECT ON foos3 TO foo;
+                  SQL
+                end
+              end
+
+              migration2 = Class.new(migration_klass) do
+                def up
+                  safe_partman_update_config :foos3, inherit_privileges: true
+
+                  safe_partman_reapply_privileges :foos3
+                end
+              end
+
+              migration1.suppress_messages { migration1.migrate(:up) }
+
+              child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
+                SELECT child.relname
+                FROM pg_inherits
+                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+                WHERE parent.relname = 'foos3'
+              SQL
+
+              child_tables.each do |table|
+                grantees = ActiveRecord::Base.connection.select_values(<<~SQL)
+                  SELECT DISTINCT(grantee)
+                  FROM information_schema.role_table_grants
+                  WHERE table_name = '#{table}'
+                SQL
+
+                # by default child tables do not inherit privileges
+                expect(grantees).to contain_exactly("postgres")
+              end
+
+              migration2.suppress_messages { migration2.migrate(:up) }
+
+              child_tables.each do |table|
+                grantees = ActiveRecord::Base.connection.select_values(<<~SQL)
+                  SELECT DISTINCT(grantee)
+                  FROM information_schema.role_table_grants
+                  WHERE table_name = '#{table}'
+                SQL
+
+                # existing child tables should get privileges from parent after reapplying
+                expect(grantees).to contain_exactly("postgres", "foo")
+              end
+
+              PgHaMigrations::PartmanConfig
+                .find("public.foos3")
+                .update!(infinite_time_partitions: true, premake: 10)
+
+              # create additional child partitions
+              ActiveRecord::Base.connection.execute("CALL public.run_maintenance_proc()")
+
+              new_child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
+                SELECT child.relname
+                FROM pg_inherits
+                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+                WHERE parent.relname = 'foos3'
+              SQL
+
+              expect(new_child_tables.size).to be > child_tables.size
+
+              new_child_tables.each do |table|
+                grantees = ActiveRecord::Base.connection.select_values(<<~SQL)
+                  SELECT DISTINCT(grantee)
+                  FROM information_schema.role_table_grants
+                  WHERE table_name = '#{table}'
+                SQL
+
+                # new child tables automatically get privileges from parent
+                expect(grantees).to contain_exactly("postgres", "foo")
+              end
+            end
+
+            it "raises error when table does not exist" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_reapply_privileges :foos3
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3 in search path")
+            end
+
+            it "raises error when table does not exist and fully qualified name provided" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_reapply_privileges "public.foos3"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ActiveRecord::StatementInvalid, /Given table is not managed by this extention: public.foos3/)
+            end
+
+            it "raises error when table exists but isn't managed by partman" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_reapply_privileges :foos3
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(ActiveRecord::StatementInvalid, /Given table is not managed by this extention: public.foos3/)
+            end
+          end
+        end
+
         describe "#adjust_lock_timeout" do
           let(:table_name) { "bogus_table" }
           let(:migration) { Class.new(migration_klass).new }

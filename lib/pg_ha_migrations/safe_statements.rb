@@ -1,5 +1,19 @@
 module PgHaMigrations::SafeStatements
-  VALID_PARTITION_TYPES = %i[range list hash]
+  PARTITION_TYPES = %i[range list hash]
+
+  PARTMAN_CREATE_PARENT_OPTIONS = %i[
+    premake
+    automatic_maintenance
+    start_partition
+    epoch
+    template_table
+    jobmon
+  ]
+
+  PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
+    infinite_time_partitions
+    inherit_privileges
+  ]
 
   def safe_added_columns_without_default_value
     @safe_added_columns_without_default_value ||= []
@@ -229,8 +243,8 @@ module PgHaMigrations::SafeStatements
   def safe_create_partitioned_table(table, key:, type:, infer_primary_key: nil, **options, &block)
     raise ArgumentError, "Expected <key> to be present" unless key.present?
 
-    unless VALID_PARTITION_TYPES.include?(type)
-      raise ArgumentError, "Expected <type> to be symbol in #{VALID_PARTITION_TYPES}"
+    unless PARTITION_TYPES.include?(type)
+      raise ArgumentError, "Expected <type> to be symbol in #{PARTITION_TYPES}"
     end
 
     if ActiveRecord::Base.connection.postgresql_version < 10_00_00
@@ -284,6 +298,76 @@ module PgHaMigrations::SafeStatements
         td.primary_keys(pk_columns.concat(Array.wrap(key)).map(&:to_s).uniq)
       end
     end
+  end
+
+  def safe_partman_create_parent(table, key:, interval:, **options)
+    raise ArgumentError, "Expected <key> to be present" unless key.present?
+    raise ArgumentError, "Expected <interval> to be present" unless interval.present?
+
+    invalid_options = options.keys - PARTMAN_CREATE_PARENT_OPTIONS
+
+    raise ArgumentError, "Unrecognized optional argument(s): #{invalid_options}" unless invalid_options.empty?
+
+    if ActiveRecord::Base.connection.postgresql_version < 10_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10"
+    end
+
+    options[:template_table] = _fully_qualified_name(options[:template_table]) if options[:template_table].present?
+
+    options = options.merge(
+      parent_table: _fully_qualified_name(table),
+      control: key,
+      type: "native",
+      interval: interval,
+    ).compact
+
+    create_parent_sql = options.map { |k, v| "p_#{k} := '#{v}'" }.join(", ")
+
+    connection.execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+  end
+
+  def safe_partman_update_config(table, **options)
+    invalid_options = options.keys - PARTMAN_UPDATE_CONFIG_OPTIONS
+
+    raise ArgumentError, "Unrecognized argument(s): #{invalid_options}" unless invalid_options.empty?
+
+    PgHaMigrations::PartmanConfig.schema = _quoted_partman_schema
+
+    PgHaMigrations::PartmanConfig
+      .find(_fully_qualified_name(table))
+      .update!(**options)
+  end
+
+  def safe_partman_reapply_privileges(table)
+    connection.execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_name(table)}')")
+  end
+
+  def _quoted_partman_schema
+    schema = connection.select_value(<<~SQL)
+      SELECT nspname
+      FROM pg_namespace JOIN pg_extension
+        ON pg_namespace.oid = pg_extension.extnamespace
+      WHERE pg_extension.extname = 'pg_partman'
+    SQL
+
+    raise PgHaMigrations::InvalidMigrationError, "The pg_partman extension is not installed" unless schema.present?
+
+    connection.quote_schema_name(schema)
+  end
+
+  def _fully_qualified_name(table)
+    return table if table.to_s.include?(".")
+
+    schema = connection.select_value(<<~SQL)
+      SELECT schemaname
+      FROM pg_tables
+      WHERE tablename = '#{table}' AND schemaname = ANY (current_schemas(false))
+      ORDER BY array_position(current_schemas(false), schemaname)
+    SQL
+
+    raise PgHaMigrations::InvalidMigrationError, "Could not find #{table} in search path" unless schema.present?
+
+    "#{schema}.#{table}"
   end
 
   def _per_migration_caller
