@@ -5,107 +5,18 @@ jobs:
     strategy:
       matrix:
         pg:
-          - 9.6
-          - 10
           - 11
           - 12
           - 13
           - 14
           - 15
         ruby:
-          - 2.7
+          - 3.0
+          - 3.1
+          - 3.2
         gemfile:
-          - rails_5.0
-          - rails_5.1
-          - rails_5.2
-          - rails_6.0
           - rails_6.1
           - rails_7.0
-        include:
-          - gemfile: rails_6.1
-            ruby: 3.0
-            pg: 9.6
-          - gemfile: rails_6.1
-            ruby: 3.0
-            pg: 10
-          - gemfile: rails_6.1
-            ruby: 3.0
-            pg: 11
-          - gemfile: rails_6.1
-            ruby: 3.0
-            pg: 12
-          - gemfile: rails_6.1
-            ruby: 3.0
-            pg: 13
-          - gemfile: rails_6.1
-            ruby: 3.0
-            pg: 14
-          - gemfile: rails_6.1
-            ruby: 3.0
-            pg: 15
-          - gemfile: rails_6.1
-            ruby: 3.1
-            pg: 9.6
-          - gemfile: rails_6.1
-            ruby: 3.1
-            pg: 10
-          - gemfile: rails_6.1
-            ruby: 3.1
-            pg: 11
-          - gemfile: rails_6.1
-            ruby: 3.1
-            pg: 12
-          - gemfile: rails_6.1
-            ruby: 3.1
-            pg: 13
-          - gemfile: rails_6.1
-            ruby: 3.1
-            pg: 14
-          - gemfile: rails_6.1
-            ruby: 3.1
-            pg: 15
-          - gemfile: rails_7.0
-            ruby: 3.0
-            pg: 9.6
-          - gemfile: rails_7.0
-            ruby: 3.0
-            pg: 10
-          - gemfile: rails_7.0
-            ruby: 3.0
-            pg: 11
-          - gemfile: rails_7.0
-            ruby: 3.0
-            pg: 12
-          - gemfile: rails_7.0
-            ruby: 3.0
-            pg: 13
-          - gemfile: rails_7.0
-            ruby: 3.0
-            pg: 14
-          - gemfile: rails_7.0
-            ruby: 3.0
-            pg: 15
-          - gemfile: rails_7.0
-            ruby: 3.1
-            pg: 9.6
-          - gemfile: rails_7.0
-            ruby: 3.1
-            pg: 10
-          - gemfile: rails_7.0
-            ruby: 3.1
-            pg: 11
-          - gemfile: rails_7.0
-            ruby: 3.1
-            pg: 12
-          - gemfile: rails_7.0
-            ruby: 3.1
-            pg: 13
-          - gemfile: rails_7.0
-            ruby: 3.1
-            pg: 14
-          - gemfile: rails_7.0
-            ruby: 3.1
-            pg: 15
     name: PostgreSQL ${{ matrix.pg }} - Ruby ${{ matrix.ruby }} - ${{ matrix.gemfile }}
     runs-on: ubuntu-latest
     env: # $BUNDLE_GEMFILE must be set at the job level, so it is set for all steps
