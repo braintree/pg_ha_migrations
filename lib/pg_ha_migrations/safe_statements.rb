@@ -273,15 +273,9 @@ module PgHaMigrations::SafeStatements
       next unless options[:id]
 
       pk_columns = td.columns.each_with_object([]) do |col, arr|
-        if col.respond_to?(:primary_key)
-          next unless col.primary_key
+        next unless col.options[:primary_key]
 
-          col.primary_key = false
-        else
-          next unless col.options[:primary_key]
-
-          col.options[:primary_key] = false
-        end
+        col.options[:primary_key] = false
 
         arr << col.name
       end
