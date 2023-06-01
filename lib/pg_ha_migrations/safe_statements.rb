@@ -358,16 +358,16 @@ module PgHaMigrations::SafeStatements
   def _fully_qualified_name(table)
     return table if table.to_s.include?(".")
 
-    schema = connection.select_value(<<~SQL)
+    schemas = connection.select_values(<<~SQL)
       SELECT schemaname
       FROM pg_tables
       WHERE tablename = '#{table}' AND schemaname = ANY (current_schemas(false))
-      ORDER BY array_position(current_schemas(false), schemaname)
     SQL
 
-    raise PgHaMigrations::InvalidMigrationError, "Could not find #{table} in search path" unless schema.present?
+    raise PgHaMigrations::InvalidMigrationError, "Could not find #{table} in search path" unless schemas.present?
+    raise PgHaMigrations::InvalidMigrationError, "Found #{table} in multiple schemas: #{schemas}" if schemas.size > 1
 
-    "#{schema}.#{table}"
+    "#{schemas.first}.#{table}"
   end
 
   def _per_migration_caller

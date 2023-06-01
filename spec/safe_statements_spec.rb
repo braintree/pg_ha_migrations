@@ -2352,6 +2352,36 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3 in search path")
             end
 
+            it "raises error when parent table exists in multiple schemas" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table "public.foos3", type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_create_partitioned_table "partman.foos3", type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
+
+              old_search_path = ActiveRecord::Base.connection.schema_search_path
+
+              begin
+                ActiveRecord::Base.connection.schema_search_path = "public, partman"
+
+                expect do
+                  migration.suppress_messages { migration.migrate(:up) }
+                end.to raise_error(PgHaMigrations::InvalidMigrationError, 'Found foos3 in multiple schemas: ["public", "partman"]')
+              ensure
+                ActiveRecord::Base.connection.schema_search_path = old_search_path
+              end
+            end
+
             it "raises error when parent table does not exist and fully qualified name provided" do
               migration = Class.new(migration_klass) do
                 def up
