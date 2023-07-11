@@ -170,20 +170,6 @@ module PgHaMigrations::SafeStatements
     unsafe_add_check_constraint(table, expression, name: name, validate: false)
   end
 
-  def unsafe_add_check_constraint(table, expression, name:, validate: true)
-    raise ArgumentError, "Expected <name> to be present" unless name.present?
-
-    quoted_table_name = connection.quote_table_name(table)
-    quoted_constraint_name = connection.quote_table_name(name)
-    sql = "ALTER TABLE #{quoted_table_name} ADD CONSTRAINT #{quoted_constraint_name} CHECK (#{expression}) #{validate ? "" : "NOT VALID"}"
-
-    safely_acquire_lock_for_table(table) do
-      say_with_time "add_check_constraint(#{table.inspect}, #{expression.inspect}, name: #{name.inspect}, validate: #{validate.inspect})" do
-        connection.execute(sql)
-      end
-    end
-  end
-
   def safe_validate_check_constraint(table, name:)
     raise ArgumentError, "Expected <name> to be present" unless name.present?
 
