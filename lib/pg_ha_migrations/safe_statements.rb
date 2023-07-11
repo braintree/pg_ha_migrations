@@ -299,7 +299,15 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def safe_partman_create_parent(table, key:, interval:, infinite_time_partitions: true, inherit_privileges: true, **options)
+  def safe_partman_create_parent(table, **options)
+    if options[:retention].present? || options[:retention_keep_table] == false
+      raise PgHaMigrations::UnsafeMigrationError.new(":retention and/or :retention_keep_table => false can potentially result in data loss if misconfigured. Please use unsafe_partman_create_parent if you want to set these options")
+    end
+
+    unsafe_partman_create_parent(table, **options)
+  end
+
+  def unsafe_partman_create_parent(table, key:, interval:, infinite_time_partitions: true, inherit_privileges: true, **options)
     raise ArgumentError, "Expected <key> to be present" unless key.present?
     raise ArgumentError, "Expected <interval> to be present" unless interval.present?
 
@@ -336,10 +344,18 @@ module PgHaMigrations::SafeStatements
 
     connection.execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
 
-    safe_partman_update_config(fully_qualified_table_name, **update_config_options)
+    unsafe_partman_update_config(fully_qualified_table_name, **update_config_options)
   end
 
   def safe_partman_update_config(table, **options)
+    if options[:retention].present? || options[:retention_keep_table] == false
+      raise PgHaMigrations::UnsafeMigrationError.new(":retention and/or :retention_keep_table => false can potentially result in data loss if misconfigured. Please use unsafe_partman_update_config if you want to set these options")
+    end
+
+    unsafe_partman_update_config(table, **options)
+  end
+
+  def unsafe_partman_update_config(table, **options)
     invalid_options = options.keys - PARTMAN_UPDATE_CONFIG_OPTIONS
 
     raise ArgumentError, "Unrecognized argument(s): #{invalid_options}" unless invalid_options.empty?
