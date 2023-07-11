@@ -1,7 +1,7 @@
 require "bundler/setup"
 require "pg_ha_migrations"
 require "db-query-matchers"
-require "pry-byebug"
+require "pry"
 
 RSpec.configure do |config|
   # Enable flags like --only-failures and --next-failure

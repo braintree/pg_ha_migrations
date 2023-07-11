@@ -3,16 +3,15 @@ module PgHaMigrations::SafeStatements
 
   PARTMAN_CREATE_PARENT_OPTIONS = %i[
     premake
-    automatic_maintenance
     start_partition
-    epoch
     template_table
-    jobmon
   ]
 
   PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
     infinite_time_partitions
     inherit_privileges
+    retention
+    retention_keep_table
   ]
 
   def safe_added_columns_without_default_value
@@ -300,30 +299,44 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def safe_partman_create_parent(table, key:, interval:, **options)
+  def safe_partman_create_parent(table, key:, interval:, infinite_time_partitions: true, inherit_privileges: true, **options)
     raise ArgumentError, "Expected <key> to be present" unless key.present?
     raise ArgumentError, "Expected <interval> to be present" unless interval.present?
 
-    invalid_options = options.keys - PARTMAN_CREATE_PARENT_OPTIONS
+    invalid_options = options.keys - PARTMAN_CREATE_PARENT_OPTIONS - PARTMAN_UPDATE_CONFIG_OPTIONS
 
     raise ArgumentError, "Unrecognized optional argument(s): #{invalid_options}" unless invalid_options.empty?
 
-    if ActiveRecord::Base.connection.postgresql_version < 10_00_00
-      raise PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10"
+    if ActiveRecord::Base.connection.postgresql_version < 11_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Native partitioning with partman not supported on Postgres databases before version 11"
     end
 
-    options[:template_table] = _fully_qualified_name(options[:template_table]) if options[:template_table].present?
+    fully_qualified_table_name = _fully_qualified_name(table)
 
-    options = options.merge(
-      parent_table: _fully_qualified_name(table),
+    create_parent_options = options.slice(*PARTMAN_CREATE_PARENT_OPTIONS)
+    update_config_options = options.slice(*PARTMAN_UPDATE_CONFIG_OPTIONS)
+
+    if create_parent_options[:template_table].present?
+      create_parent_options[:template_table] = _fully_qualified_name(create_parent_options[:template_table])
+    end
+
+    create_parent_options = create_parent_options.merge(
+      parent_table: fully_qualified_table_name,
       control: key,
       type: "native",
       interval: interval,
     ).compact
 
-    create_parent_sql = options.map { |k, v| "p_#{k} := '#{v}'" }.join(", ")
+    update_config_options = update_config_options.merge(
+      infinite_time_partitions: infinite_time_partitions,
+      inherit_privileges: inherit_privileges,
+    ).compact
+
+    create_parent_sql = create_parent_options.map { |k, v| "p_#{k} := #{quote(v)}" }.join(", ")
 
     connection.execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+
+    safe_partman_update_config(fully_qualified_table_name, **update_config_options)
   end
 
   def safe_partman_update_config(table, **options)
@@ -333,9 +346,15 @@ module PgHaMigrations::SafeStatements
 
     PgHaMigrations::PartmanConfig.schema = _quoted_partman_schema
 
-    PgHaMigrations::PartmanConfig
-      .find(_fully_qualified_name(table))
-      .update!(**options)
+    config = PgHaMigrations::PartmanConfig.find(_fully_qualified_name(table))
+
+    config.assign_attributes(**options)
+
+    inherit_privileges_changed = config.inherit_privileges_changed?
+
+    config.save!
+
+    safe_partman_reapply_privileges(table) if inherit_privileges_changed
   end
 
   def safe_partman_reapply_privileges(table)

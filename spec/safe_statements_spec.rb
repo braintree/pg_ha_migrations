@@ -2214,9 +2214,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
               part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
 
               expect(part_config).to have_attributes(
-                automatic_maintenance: "on",
                 control: "created_at",
-                jobmon: true,
+                infinite_time_partitions: true,
+                inherit_privileges: true,
                 partition_interval: "P1M",
                 partition_type: "native",
                 premake: 4,
@@ -2228,7 +2228,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               migration = Class.new(migration_klass) do
                 def up
                   safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
-                    t.integer :created_at, :null => false
+                    t.timestamps :null => false
                     t.text :text_column
                   end
 
@@ -2247,10 +2247,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     interval: "weekly",
                     template_table: :foos3_template,
                     premake: 1,
-                    automatic_maintenance: "off",
                     start_partition: start_partition,
-                    epoch: "seconds",
-                    jobmon: false
+                    infinite_time_partitions: false,
+                    inherit_privileges: false,
+                    retention: "60 days",
+                    retention_keep_table: false
                 end
               end
 
@@ -2280,13 +2281,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
               part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
 
               expect(part_config).to have_attributes(
-                automatic_maintenance: "off",
                 control: "created_at",
-                jobmon: false,
                 partition_interval: "P7D",
                 partition_type: "native",
                 premake: 1,
                 template_table: "public.foos3_template",
+                infinite_time_partitions: false,
+                inherit_privileges: false,
+                retention: "60 days",
+                retention_keep_table: false,
               )
             end
 
@@ -2326,18 +2329,18 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end.to raise_error(ArgumentError, "Unrecognized optional argument(s): [:foo]")
             end
 
-            it "raises error when on Postgres < 10" do
+            it "raises error when on Postgres < 11" do
               migration = Class.new(migration_klass) do
                 def up
                   safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
                 end
               end
 
-              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
+              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(10_00_00)
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning not supported on Postgres databases before version 10")
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Native partitioning with partman not supported on Postgres databases before version 11")
             end
 
             it "raises error when parent table does not exist" do
@@ -2469,7 +2472,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               PgHaMigrations::PartmanConfig.schema = "public"
             end
 
-            it "updates values" do
+            it "updates values and reapplies privileges when inherit_privileges changes from true to false" do
               migration = Class.new(migration_klass) do
                 def up
                   safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
@@ -2478,10 +2481,62 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   end
 
                   safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
 
+              migration.suppress_messages { migration.migrate(:up) }
+
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_update_config :foos3,
+                    inherit_privileges: false,
+                    infinite_time_partitions: false,
+                    retention: "60 days",
+                    retention_keep_table: false
+                end
+              end
+
+              allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/reapply_privileges/).once
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+
+              expect(part_config).to have_attributes(
+                inherit_privileges: false,
+                infinite_time_partitions: false,
+                retention: "60 days",
+                retention_keep_table: false,
+              )
+            end
+
+            it "updates values and reapplies privileges when inherit_privileges changes from false to true" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3,
+                    key: :created_at,
+                    interval: "monthly",
+                    inherit_privileges: false,
+                    infinite_time_partitions: false
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              migration = Class.new(migration_klass) do
+                def up
                   safe_partman_update_config :foos3, inherit_privileges: true, infinite_time_partitions: true
                 end
               end
+
+              allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/reapply_privileges/).once
 
               migration.suppress_messages { migration.migrate(:up) }
 
@@ -2490,6 +2545,39 @@ RSpec.describe PgHaMigrations::SafeStatements do
               expect(part_config).to have_attributes(
                 inherit_privileges: true,
                 infinite_time_partitions: true,
+              )
+            end
+
+            it "updates values and does not reapply privileges when inherit_privileges does not change" do
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_update_config :foos3, infinite_time_partitions: false
+                end
+              end
+
+              allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/reapply_privileges/)
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+
+              expect(part_config).to have_attributes(
+                inherit_privileges: true,
+                infinite_time_partitions: false,
               )
             end
 
