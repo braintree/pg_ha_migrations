@@ -2201,13 +2201,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
               part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
 
               expect(part_config).to have_attributes(
-                automatic_maintenance: "on",
                 control: "created_at",
-                jobmon: true,
                 partition_interval: "P1M",
                 partition_type: "native",
                 premake: 4,
                 template_table: "public.template_public_foos3",
+                infinite_time_partitions: true,
+                inherit_privileges: true,
+                retention: nil,
+                retention_keep_table: true,
               )
             end
           end
@@ -2251,12 +2253,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect(part_config).to have_attributes(
                 control: "created_at",
-                infinite_time_partitions: true,
-                inherit_privileges: true,
                 partition_interval: "P1M",
                 partition_type: "native",
                 premake: 4,
                 template_table: "partman.template_public_foos3",
+                infinite_time_partitions: true,
+                inherit_privileges: true,
+                retention: nil,
+                retention_keep_table: true,
               )
             end
 
@@ -2362,7 +2366,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(ArgumentError, "Unrecognized optional argument(s): [:foo]")
+              end.to raise_error(ArgumentError, "unknown keyword: :foo")
             end
 
             it "raises error when on Postgres < 11" do
@@ -2483,6 +2487,18 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 migration.suppress_messages { migration.migrate(:up) }
               end.to raise_error(ActiveRecord::StatementInvalid, /you must have created the given parent table as ranged \(not list\) partitioned already/)
             end
+
+            it "raises error when non-standard table name is used" do
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_partman_create_parent "foos3'", key: :created_at, interval: "monthly"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores")
+            end
           end
         end
 
@@ -2564,7 +2580,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     inherit_privileges: false,
                     infinite_time_partitions: false,
                     retention: "60 days",
-                    retention_keep_table: false
+                    retention_keep_table: false,
+                    premake: 1
                 end
               end
 
@@ -2580,6 +2597,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 infinite_time_partitions: false,
                 retention: "60 days",
                 retention_keep_table: false,
+                premake: 1,
               )
             end
 
@@ -2737,8 +2755,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration2 = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_update_config :foos3, inherit_privileges: true
-
                   safe_partman_reapply_privileges :foos3
                 end
               end
@@ -2760,7 +2776,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   WHERE table_name = '#{table}'
                 SQL
 
-                # by default child tables do not inherit privileges
+                # the role was added after the partitions were created
+                # and is not automatically propagated
                 expect(grantees).to contain_exactly("postgres")
               end
 
@@ -2779,7 +2796,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               PgHaMigrations::PartmanConfig
                 .find("public.foos3")
-                .update!(infinite_time_partitions: true, premake: 10)
+                .update!(premake: 10)
 
               # create additional child partitions
               ActiveRecord::Base.connection.execute("CALL public.run_maintenance_proc()")

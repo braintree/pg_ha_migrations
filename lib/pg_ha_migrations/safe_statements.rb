@@ -1,15 +1,10 @@
 module PgHaMigrations::SafeStatements
   PARTITION_TYPES = %i[range list hash]
 
-  PARTMAN_CREATE_PARENT_OPTIONS = %i[
-    premake
-    start_partition
-    template_table
-  ]
-
   PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
     infinite_time_partitions
     inherit_privileges
+    premake
     retention
     retention_keep_table
   ]
@@ -307,42 +302,50 @@ module PgHaMigrations::SafeStatements
     unsafe_partman_create_parent(table, **options)
   end
 
-  def unsafe_partman_create_parent(table, key:, interval:, infinite_time_partitions: true, inherit_privileges: true, **options)
+  def unsafe_partman_create_parent(
+    table,
+    key:,
+    interval:,
+    infinite_time_partitions: true,
+    inherit_privileges: true,
+    premake: nil,
+    start_partition: nil,
+    template_table: nil,
+    retention: nil,
+    retention_keep_table: nil
+  )
     raise ArgumentError, "Expected <key> to be present" unless key.present?
     raise ArgumentError, "Expected <interval> to be present" unless interval.present?
-
-    invalid_options = options.keys - PARTMAN_CREATE_PARENT_OPTIONS - PARTMAN_UPDATE_CONFIG_OPTIONS
-
-    raise ArgumentError, "Unrecognized optional argument(s): #{invalid_options}" unless invalid_options.empty?
 
     if ActiveRecord::Base.connection.postgresql_version < 11_00_00
       raise PgHaMigrations::InvalidMigrationError, "Native partitioning with partman not supported on Postgres databases before version 11"
     end
 
-    fully_qualified_table_name = _fully_qualified_name(table)
+    fully_qualified_table_name = _fully_qualified_partman_name(table)
 
-    create_parent_options = options.slice(*PARTMAN_CREATE_PARENT_OPTIONS)
-    update_config_options = options.slice(*PARTMAN_UPDATE_CONFIG_OPTIONS)
-
-    if create_parent_options[:template_table].present?
-      create_parent_options[:template_table] = _fully_qualified_name(create_parent_options[:template_table])
-    end
-
-    create_parent_options = create_parent_options.merge(
+    create_parent_options = {
       parent_table: fully_qualified_table_name,
       control: key,
       type: "native",
       interval: interval,
-    ).compact
+      premake: premake,
+      start_partition: start_partition,
+    }.compact
 
-    update_config_options = update_config_options.merge(
-      infinite_time_partitions: infinite_time_partitions,
-      inherit_privileges: inherit_privileges,
-    ).compact
+    if template_table.present?
+      create_parent_options[:template_table] = _fully_qualified_partman_name(template_table)
+    end
 
     create_parent_sql = create_parent_options.map { |k, v| "p_#{k} := #{quote(v)}" }.join(", ")
 
     connection.execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+
+    update_config_options = {
+      infinite_time_partitions: infinite_time_partitions,
+      inherit_privileges: inherit_privileges,
+      retention: retention,
+      retention_keep_table: retention_keep_table,
+    }.compact
 
     unsafe_partman_update_config(fully_qualified_table_name, **update_config_options)
   end
@@ -362,7 +365,7 @@ module PgHaMigrations::SafeStatements
 
     PgHaMigrations::PartmanConfig.schema = _quoted_partman_schema
 
-    config = PgHaMigrations::PartmanConfig.find(_fully_qualified_name(table))
+    config = PgHaMigrations::PartmanConfig.find(_fully_qualified_partman_name(table))
 
     config.assign_attributes(**options)
 
@@ -374,7 +377,7 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_partman_reapply_privileges(table)
-    connection.execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_name(table)}')")
+    connection.execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_partman_name(table)}')")
   end
 
   def _quoted_partman_schema
@@ -390,7 +393,9 @@ module PgHaMigrations::SafeStatements
     connection.quote_schema_name(schema)
   end
 
-  def _fully_qualified_name(table)
+  def _fully_qualified_partman_name(table)
+    table.to_s.split(".").each { |part| _validate_partman_identifier(part) }
+
     return table if table.to_s.include?(".")
 
     schemas = connection.select_values(<<~SQL)
@@ -402,7 +407,15 @@ module PgHaMigrations::SafeStatements
     raise PgHaMigrations::InvalidMigrationError, "Could not find #{table} in search path" unless schemas.present?
     raise PgHaMigrations::InvalidMigrationError, "Found #{table} in multiple schemas: #{schemas}" if schemas.size > 1
 
+    _validate_partman_identifier(schemas.first)
+
     "#{schemas.first}.#{table}"
+  end
+
+  def _validate_partman_identifier(identifier)
+    if identifier.to_s !~ /^[a-z_][a-z_\d]*$/
+      raise PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores"
+    end
   end
 
   def _per_migration_caller
