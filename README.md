@@ -276,6 +276,7 @@ The rest are keyword args with the following mappings:
 
 - `key` -> `p_control`. Required: `true`
 - `interval` -> `p_interval`. Required: `true`
+- `template_table` -> `p_template_table`. Required: `false`. Partman will create a template table if not defined.
 - `premake` -> `p_premake`. Required: `false`. Partman defaults to `4`.
 - `start_partition` -> `p_start_partition`. Required: `false`. Partman defaults to the current timestamp.
 
@@ -304,11 +305,18 @@ With custom overrides:
 ```ruby
 safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
   t.timestamps :null => false
+  t.text :some_column
+end
+
+# Partman will reference the template table to create unique indexes on child tables
+safe_create_table :table_template, id: false do |t|
+  t.text :some_column, index: { unique: true }
 end
 
 safe_partman_create_parent :table,
   key: :created_at,
   interval: "weekly",
+  template_table: :table_template,
   premake: 10,
   start_partition: (Time.current + 1.month).to_fs(:db),
   infinite_time_partitions: false,
