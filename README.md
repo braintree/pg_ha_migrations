@@ -286,7 +286,7 @@ These options are delegated to the `unsafe_partman_update_config` method to upda
 
 - `infinite_time_partitions`. Partman defaults this to `false` but we default to `true`
 - `inherit_privileges`. Partman defaults this to `false` but we default to `true`
-- `retention`. Default: Partman defaults this to `null`
+- `retention`. Partman defaults this to `null`
 - `retention_keep_table`. Partman defaults this to `true`
 
 ```ruby
