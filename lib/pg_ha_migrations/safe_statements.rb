@@ -336,9 +336,9 @@ module PgHaMigrations::SafeStatements
       create_parent_options[:template_table] = _fully_qualified_partman_name(template_table)
     end
 
-    create_parent_sql = create_parent_options.map { |k, v| "p_#{k} := #{quote(v)}" }.join(", ")
+    create_parent_sql = create_parent_options.map { |k, v| "p_#{k} := #{connection.quote(v)}" }.join(", ")
 
-    connection.execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+    unsafe_execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
 
     update_config_options = {
       infinite_time_partitions: infinite_time_partitions,
@@ -377,7 +377,7 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_partman_reapply_privileges(table)
-    connection.execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_partman_name(table)}')")
+    unsafe_execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_partman_name(table)}')")
   end
 
   def _quoted_partman_schema

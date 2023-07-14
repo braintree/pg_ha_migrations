@@ -264,6 +264,106 @@ safe_create_partitioned_table :table, type: :range, key: :example_column, infer_
 end
 ```
 
+#### safe\_partman\_create\_parent
+
+Safely configure a partitioned table to be managed by [pg\_partman](https://github.com/pgpartman/pg_partman).
+
+This method calls the [create\_parent](https://github.com/pgpartman/pg_partman/blob/master/doc/pg_partman.md#creation-functions) partman function with some reasonable defaults and a subset of user-defined overrides.
+
+The first (and only) positional arg maps to `p_parent_table` in the `create_parent` function.
+
+The rest are keyword args with the following mappings:
+
+- `key` -> `p_control`. Required: `true`
+- `interval` -> `p_interval`. Required: `true`
+- `premake` -> `p_premake`. Required: `false`. Partman defaults to `4`.
+- `start_partition` -> `p_start_partition`. Required: `false`. Partman defaults to the current timestamp.
+
+Note that we have chosen to require PostgreSQL 11+ and hardcode `p_type` to `native` for simplicity, as previous PostgreSQL versions are end-of-life.
+
+Additionally, this method allows you to configure a subset of attributes on the record stored in the [part\_config](https://github.com/pgpartman/pg_partman/blob/master/doc/pg_partman.md#tables) table.
+These options are delegated to the `unsafe_partman_update_config` method to update the record:
+
+- `infinite_time_partitions`. Partman defaults this to `false` but we default to `true`
+- `inherit_privileges`. Partman defaults this to `false` but we default to `true`
+- `retention`. Default: Partman defaults this to `null`
+- `retention_keep_table`. Partman defaults this to `true`
+
+```ruby
+safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
+  t.timestamps :null => false
+end
+
+safe_partman_create_parent :table,
+  key: :created_at,
+  interval: "weekly",
+  premake: 10,
+  start_partition: (Time.current + 1.month).to_fs(:db),
+  infinite_time_partitions: false,
+  inherit_privileges: false
+```
+
+#### unsafe\_partman\_create\_parent
+
+We have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
+While we recognize that these options are useful, we think they fit in the same category as `drop_table` and `rename_table`, and are therefore unsafe from an application perspective.
+If you wish to define these options, you must use this method.
+
+```ruby
+safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
+  t.timestamps :null => false
+end
+
+unsafe_partman_create_parent :table,
+  key: :created_at,
+  interval: "weekly",
+  retention: "60 days",
+  retention_keep_table: false
+```
+
+#### safe\_partman\_update\_config
+
+There are some partitioning options that cannot be set in the call to `create_parent` and are only available in the `part_config` table.
+As mentioned previously, you can specify these args in the call to `safe_partman_create_parent` or `unsafe_partman_create_parent` which will be delegated to this method.
+Calling this method directly will be useful if you need to modify your partitioned table after the fact.
+
+Allowed keyword args:
+
+- `infinite_time_partitions`
+- `inherit_privileges`
+- `premake`
+- `retention`
+- `retention_keep_table`
+
+Note that we detect if the value of `inherit_privileges` is changing and will automatically call `safe_partman_reapply_privileges` to ensure permissions are propagated to existing child partitions.
+
+```ruby
+safe_partman_update_config :table,
+  infinite_time_partitions: false,
+  inherit_privileges: false,
+  premake: 10
+```
+
+#### unsafe\_partman\_update\_config
+
+We have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
+While we recognize that these options are useful, we think they fit in the same category as `drop_table` and `rename_table`, and are therefore unsafe from an application perspective.
+If you wish to define these options, you must use this method.
+
+```ruby
+unsafe_partman_update_config :table,
+  retention: "60 days",
+  retention_keep_table: false
+```
+
+#### safe\_partman\_reapply\_privileges
+
+If your partitioned table is configured with `inherit_privileges` set to `true`, use this method after granting new roles / privileges on the parent table to ensure permissions are propagated to existing child partitions.
+
+```ruby
+safe_partman_reapply_privileges :table
+```
+
 ### Utilities
 
 #### safely\_acquire\_lock\_for\_table
