@@ -325,8 +325,7 @@ safe_partman_create_parent :table,
 
 #### unsafe\_partman\_create\_parent
 
-We have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
-While we recognize that these options are useful, we think they fit in the same category as `drop_table` and `rename_table`, and are therefore unsafe from an application perspective.
+As mentioned above, we have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
 If you wish to define these options, you must use this method.
 
 ```ruby
