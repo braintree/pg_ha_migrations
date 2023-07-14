@@ -289,6 +289,18 @@ These options are delegated to the `unsafe_partman_update_config` method to upda
 - `retention`. Partman defaults this to `null`
 - `retention_keep_table`. Partman defaults this to `true`
 
+With only the required args:
+
+```ruby
+safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
+  t.timestamps :null => false
+end
+
+safe_partman_create_parent :table, key: :created_at, interval: "weekly"
+```
+
+With custom overrides:
+
 ```ruby
 safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
   t.timestamps :null => false
