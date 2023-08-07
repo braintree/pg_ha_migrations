@@ -1770,7 +1770,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "creates range partition on supported versions" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1792,7 +1792,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error creating range partition on Postgres < 10" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1809,7 +1809,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "creates list partition on supported versions" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :list, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :list, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1831,7 +1831,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error creating list partition on Postgres < 10" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :list, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :list, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1848,7 +1848,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "creates hash partition on supported versions" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :hash, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :hash, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1870,7 +1870,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error creating hash partition on Postgres < 11" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :hash, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :hash, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1887,7 +1887,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "infers pk with defaults and simple key" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1904,7 +1904,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "infers pk with different name and simple key" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: :created_at, primary_key: :pk do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at, primary_key: :pk do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1921,7 +1921,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "infers single column pk when used as the partition key" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: :pk, primary_key: :pk do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: :pk, primary_key: :pk do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1938,7 +1938,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "does not create pk with defaults and complex key" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: ->{ "(created_at::date)" } do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: ->{ "(created_at::date)" } do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1955,7 +1955,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "infers pk with defaults and composite key" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: [:created_at, :text_column] do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: [:created_at, :text_column] do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1972,7 +1972,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "does not create pk when infer_primary_key is false" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, infer_primary_key: false, key: [:created_at, :text_column] do |t|
+                safe_create_partitioned_table :foos3, type: :range, infer_primary_key: false, partition_key: [:created_at, :text_column] do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -1993,7 +1993,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: [:created_at, :text_column] do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: [:created_at, :text_column] do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -2010,7 +2010,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "does not create pk when id is false" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, id: false, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :range, id: false, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -2027,7 +2027,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "defaults to bigint pk" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -2045,7 +2045,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "can override pk type" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: :created_at, id: :serial do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at, id: :serial do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -2065,7 +2065,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -2082,7 +2082,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises when partition type is invalid" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :garbage, key: :created_at do |t|
+                safe_create_partitioned_table :foos3, type: :garbage, partition_key: :created_at do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -2091,13 +2091,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect do
               migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(ArgumentError, "Expected <type> to be symbol in [:range, :list, :hash]")
+            end.to raise_error(ArgumentError, "Expected <type> to be symbol in [:range, :list, :hash] but received :garbage")
           end
 
           it "raises when partition key is not present" do
             migration = Class.new(migration_klass) do
               def up
-                safe_create_partitioned_table :foos3, type: :range, key: nil do |t|
+                safe_create_partitioned_table :foos3, type: :range, partition_key: nil do |t|
                   t.timestamps :null => false
                   t.text :text_column
                 end
@@ -2106,7 +2106,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect do
               migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(ArgumentError, "Expected <key> to be present")
+            end.to raise_error(ArgumentError, "Expected <partition_key> to be present")
           end
         end
 
@@ -2151,12 +2151,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -2176,12 +2176,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "creates child partitions with defaults" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -2227,12 +2227,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "creates child partitions with defaults" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -2266,8 +2266,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             it "creates child partitions with custom options" do
               migration = Class.new(migration_klass) do
+                def self.current_time
+                  @current_time ||= Time.current
+                end
+
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
@@ -2276,23 +2280,30 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     t.text :text_column, index: { unique: true }
                   end
 
-                  if ActiveRecord::VERSION::MAJOR < 7
-                    start_partition = Time.current.to_s(:db)
-                  else
-                    start_partition = Time.current.to_fs(:db)
-                  end
-
-                  unsafe_partman_create_parent :foos3,
-                    key: :created_at,
+                  unsafe_partman_create_parent "public.foos3",
+                    partition_key: :created_at,
                     interval: "weekly",
-                    template_table: :foos3_template,
+                    template_table: "public.foos3_template",
                     premake: 1,
-                    start_partition: start_partition,
+                    start_partition: self.class.current_time,
                     infinite_time_partitions: false,
                     inherit_privileges: false,
                     retention: "60 days",
                     retention_keep_table: false
                 end
+              end
+
+              allow(migration.current_time).to receive(:to_fs).and_call_original
+              allow(migration.current_time).to receive(:to_s).and_call_original
+
+              if ActiveRecord::VERSION::MAJOR < 7
+                # we loop through each method until to_s(:db) finally works
+                expect(migration.current_time).to receive(:to_fs).with(:db)
+                expect(migration.current_time).to receive(:to_s).with(:db)
+              else
+                # we break out of the loop early because to_fs(:db) works
+                expect(migration.current_time).to receive(:to_fs).with(:db)
+                expect(migration.current_time).to_not receive(:to_s)
               end
 
               migration.suppress_messages { migration.migrate(:up) }
@@ -2333,22 +2344,54 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
             end
 
-            it "raises error when key not present" do
+            it "uses parent table listed first in the search path when multiple present" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, key: nil, interval: "monthly"
+                  safe_create_partitioned_table "public.foos3", type: :range, partition_key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  safe_create_partitioned_table "partman.foos3", type: :range, partition_key: :created_at do |t|
+                    t.timestamps :null => false
+                    t.text :text_column
+                  end
+
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                end
+              end
+
+              old_search_path = ActiveRecord::Base.connection.schema_search_path
+
+              begin
+                ActiveRecord::Base.connection.schema_search_path = "public, partman"
+
+                migration.suppress_messages { migration.migrate(:up) }
+              ensure
+                ActiveRecord::Base.connection.schema_search_path = old_search_path
+              end
+
+              expect do
+                PgHaMigrations::PartmanConfig.find("public.foos3")
+              end.to_not raise_error
+            end
+
+            it "raises error when partition key not present" do
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_partman_create_parent :foos3, partition_key: nil, interval: "monthly"
                 end
               end
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(ArgumentError, "Expected <key> to be present")
+              end.to raise_error(ArgumentError, "Expected <partition_key> to be present")
             end
 
             it "raises error when interval not present" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: nil
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: nil
                 end
               end
 
@@ -2360,7 +2403,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when unsupported optional arg is supplied" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly", foo: "bar"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", foo: "bar"
                 end
               end
 
@@ -2372,7 +2415,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when on Postgres < 11" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -2386,89 +2429,59 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when parent table does not exist" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3 in search path")
-            end
-
-            it "raises error when parent table exists in multiple schemas" do
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_create_partitioned_table "public.foos3", type: :range, key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
-                  safe_create_partitioned_table "partman.foos3", type: :range, key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
-                end
-              end
-
-              old_search_path = ActiveRecord::Base.connection.schema_search_path
-
-              begin
-                ActiveRecord::Base.connection.schema_search_path = "public, partman"
-
-                expect do
-                  migration.suppress_messages { migration.migrate(:up) }
-                end.to raise_error(PgHaMigrations::InvalidMigrationError, 'Found foos3 in multiple schemas: ["public", "partman"]')
-              ensure
-                ActiveRecord::Base.connection.schema_search_path = old_search_path
-              end
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table foos3")
             end
 
             it "raises error when parent table does not exist and fully qualified name provided" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent "public.foos3", key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent "public.foos3", partition_key: :created_at, interval: "monthly"
                 end
               end
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(ActiveRecord::StatementInvalid, /Please create parent table first: public.foos3/)
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table public.foos3")
             end
 
             it "raises error when template table does not exist" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly", template_table: :foos3_template
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", template_table: :foos3_template
                 end
               end
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3_template in search path")
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table foos3_template")
             end
 
             it "raises error when template table does not exist and fully qualified name provided" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly", template_table: "public.foos3_template"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", template_table: "public.foos3_template"
                 end
               end
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(ActiveRecord::StatementInvalid, /Please create template table first/)
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table public.foos3_template")
             end
 
             it "raises error when parent table is not partitioned" do
@@ -2479,7 +2492,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -2491,13 +2504,25 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when non-standard table name is used" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent "foos3'", key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent "foos3'", partition_key: :created_at, interval: "monthly"
                 end
               end
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
               end.to raise_error(PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores")
+            end
+
+            it "raises error when fully qualified table name has multiple periods" do
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_partman_create_parent "foo.bar.foos3", partition_key: :created_at, interval: "monthly"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Expected table to be in the format <table> or <schema>.<table> but received foo.bar.foos3")
             end
           end
         end
@@ -2563,12 +2588,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "updates values and reapplies privileges when inherit_privileges changes from true to false" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -2604,13 +2629,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "updates values and reapplies privileges when inherit_privileges changes from false to true" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
                   unsafe_partman_create_parent :foos3,
-                    key: :created_at,
+                    partition_key: :created_at,
                     interval: "monthly",
                     inherit_privileges: false,
                     infinite_time_partitions: false
@@ -2641,12 +2666,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "updates values and does not reapply privileges when inherit_privileges does not change" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -2680,13 +2705,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3 in search path")
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table foos3")
             end
 
             it "raises error when table exists but isn't configured with partman" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
@@ -2739,12 +2764,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "applies privileges to new and existing child tables" do
               migration1 = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
 
-                  unsafe_partman_create_parent :foos3, key: :created_at, interval: "monthly"
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
 
                   unsafe_execute(<<~SQL)
                     CREATE ROLE foo NOLOGIN;
@@ -2832,7 +2857,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find foos3 in search path")
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table foos3")
             end
 
             it "raises error when table does not exist and fully qualified name provided" do
@@ -2844,13 +2869,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(ActiveRecord::StatementInvalid, /Given table is not managed by this extention: public.foos3/)
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table public.foos3")
             end
 
             it "raises error when table exists but isn't managed by partman" do
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, key: :created_at do |t|
+                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end

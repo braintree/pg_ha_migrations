@@ -226,18 +226,18 @@ Safely create a new partitioned table using [declaritive partitioning](https://w
 
 ```ruby
 # list partitioned table using single column as partition key
-safe_create_partitioned_table :table, type: :list, key: :example_column do |t|
+safe_create_partitioned_table :table, type: :list, partition_key: :example_column do |t|
   t.text :example_column, null: false
 end
 
 # range partitioned table using multiple columns as partition key
-safe_create_partitioned_table :table, type: :range, key: [:example_column_a, :example_column_b] do |t|
+safe_create_partitioned_table :table, type: :range, partition_key: [:example_column_a, :example_column_b] do |t|
   t.integer :example_column_a, null: false
   t.integer :example_column_b, null: false
 end
 
 # hash partitioned table using expression as partition key
-safe_create_partitioned_table :table, :type: :hash, key: ->{ "(example_column::date)" } do |t|
+safe_create_partitioned_table :table, :type: :hash, partition_key: ->{ "(example_column::date)" } do |t|
   t.datetime :example_column, null: false
 end
 ```
@@ -245,7 +245,7 @@ end
 The identifier column type is `bigserial` by default. This can be overridden, as you would in `safe_create_table`, by setting the `id` argument:
 
 ```ruby
-safe_create_partitioned_table :table, id: :serial, type: :range, key: :example_column do |t|
+safe_create_partitioned_table :table, id: :serial, type: :range, partition_key: :example_column do |t|
   t.date :example_column, null: false
 end
 ```
@@ -254,12 +254,12 @@ In PostgreSQL 11+, primary key constraints are supported on partitioned tables g
 
 ```ruby
 # primary key will be (id, example_column)
-safe_create_partitioned_table :table, type: :range, key: :example_column do |t|
+safe_create_partitioned_table :table, type: :range, partition_key: :example_column do |t|
   t.date :example_column, null: false
 end
 
 # primary key will not be created
-safe_create_partitioned_table :table, type: :range, key: :example_column, infer_primary_key: false do |t|
+safe_create_partitioned_table :table, type: :range, partition_key: :example_column, infer_primary_key: false do |t|
   t.date :example_column, null: false
 end
 ```
@@ -274,7 +274,7 @@ The first (and only) positional argument maps to `p_parent_table` in the `create
 
 The rest are keyword args with the following mappings:
 
-- `key` -> `p_control`. Required: `true`
+- `partition_key` -> `p_control`. Required: `true`
 - `interval` -> `p_interval`. Required: `true`
 - `template_table` -> `p_template_table`. Required: `false`. Partman will create a template table if not defined.
 - `premake` -> `p_premake`. Required: `false`. Partman defaults to `4`.
@@ -293,17 +293,17 @@ These options are delegated to the `unsafe_partman_update_config` method to upda
 With only the required args:
 
 ```ruby
-safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
+safe_create_partitioned_table :table, type: :range, partition_key: :created_at do |t|
   t.timestamps null: false
 end
 
-safe_partman_create_parent :table, key: :created_at, interval: "weekly"
+safe_partman_create_parent :table, partition_key: :created_at, interval: "weekly"
 ```
 
 With custom overrides:
 
 ```ruby
-safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
+safe_create_partitioned_table :table, type: :range, partition_key: :created_at do |t|
   t.timestamps null: false
   t.text :some_column
 end
@@ -314,11 +314,11 @@ safe_create_table :table_template, id: false do |t|
 end
 
 safe_partman_create_parent :table,
-  key: :created_at,
+  partition_key: :created_at,
   interval: "weekly",
   template_table: :table_template,
   premake: 10,
-  start_partition: (Time.current + 1.month).to_fs(:db),
+  start_partition: Time.current + 1.month,
   infinite_time_partitions: false,
   inherit_privileges: false
 ```
@@ -330,12 +330,12 @@ While we recognize that these options are useful, we think they fit in the same 
 If you wish to define these options, you must use this method.
 
 ```ruby
-safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
+safe_create_partitioned_table :table, type: :range, partition_key: :created_at do |t|
   t.timestamps null: false
 end
 
 unsafe_partman_create_parent :table,
-  key: :created_at,
+  partition_key: :created_at,
   interval: "weekly",
   retention: "60 days",
   retention_keep_table: false
