@@ -321,10 +321,9 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::InvalidMigrationError, "Native partitioning with partman not supported on Postgres databases before version 11"
     end
 
-    fully_qualified_table_name = _fully_qualified_partman_name(table)
-
     create_parent_options = {
-      parent_table: fully_qualified_table_name,
+      parent_table: _fully_qualified_table_name_for_partman(table),
+      template_table: template_table ? _fully_qualified_table_name_for_partman(template_table) : nil,
       control: key,
       type: "native",
       interval: interval,
@@ -332,13 +331,20 @@ module PgHaMigrations::SafeStatements
       start_partition: start_partition,
     }.compact
 
-    if template_table.present?
-      create_parent_options[:template_table] = _fully_qualified_partman_name(template_table)
-    end
-
     create_parent_sql = create_parent_options.map { |k, v| "p_#{k} := #{connection.quote(v)}" }.join(", ")
 
-    unsafe_execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+    log_message = "partman_create_parent(#{table}, " \
+      "key: #{key.inspect}, " \
+      "interval: #{interval.inspect}, " \
+      "infinite_time_partitions: #{infinite_time_partitions.inspect}, " \
+      "inherit_privileges: #{inherit_privileges.inspect}, " \
+      "premake: #{premake.inspect}, " \
+      "start_partition: #{start_partition.inspect}, " \
+      "template_table: #{template_table.inspect})"
+
+    say_with_time(log_message) do
+      unsafe_execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+    end
 
     update_config_options = {
       infinite_time_partitions: infinite_time_partitions,
@@ -347,7 +353,7 @@ module PgHaMigrations::SafeStatements
       retention_keep_table: retention_keep_table,
     }.compact
 
-    unsafe_partman_update_config(fully_qualified_table_name, **update_config_options)
+    unsafe_partman_update_config(create_parent_options[:parent_table], **update_config_options)
   end
 
   def safe_partman_update_config(table, **options)
@@ -365,19 +371,23 @@ module PgHaMigrations::SafeStatements
 
     PgHaMigrations::PartmanConfig.schema = _quoted_partman_schema
 
-    config = PgHaMigrations::PartmanConfig.find(_fully_qualified_partman_name(table))
+    config = PgHaMigrations::PartmanConfig.find(_fully_qualified_table_name_for_partman(table))
 
     config.assign_attributes(**options)
 
     inherit_privileges_changed = config.inherit_privileges_changed?
 
-    config.save!
+    say_with_time "partman_update_config(#{table.inspect}, #{options.map { |k,v| "#{k}: #{v.inspect}" }.join(", ")})" do
+      config.save!
+    end
 
     safe_partman_reapply_privileges(table) if inherit_privileges_changed
   end
 
   def safe_partman_reapply_privileges(table)
-    unsafe_execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_partman_name(table)}')")
+    say_with_time "partman_reapply_privileges(#{table.inspect})" do
+      unsafe_execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_table_name_for_partman(table)}')")
+    end
   end
 
   def _quoted_partman_schema
@@ -393,7 +403,7 @@ module PgHaMigrations::SafeStatements
     connection.quote_schema_name(schema)
   end
 
-  def _fully_qualified_partman_name(table)
+  def _fully_qualified_table_name_for_partman(table)
     table.to_s.split(".").each { |part| _validate_partman_identifier(part) }
 
     return table if table.to_s.include?(".")
@@ -409,6 +419,7 @@ module PgHaMigrations::SafeStatements
 
     _validate_partman_identifier(schemas.first)
 
+    # Quoting is unneeded since _validate_partman_identifier ensures the schema / table use standard naming conventions
     "#{schemas.first}.#{table}"
   end
 

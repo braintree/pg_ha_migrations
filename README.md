@@ -270,7 +270,7 @@ Safely configure a partitioned table to be managed by [pg\_partman](https://gith
 
 This method calls the [create\_parent](https://github.com/pgpartman/pg_partman/blob/master/doc/pg_partman.md#creation-functions) partman function with some reasonable defaults and a subset of user-defined overrides.
 
-The first (and only) positional arg maps to `p_parent_table` in the `create_parent` function.
+The first (and only) positional argument maps to `p_parent_table` in the `create_parent` function.
 
 The rest are keyword args with the following mappings:
 
@@ -294,7 +294,7 @@ With only the required args:
 
 ```ruby
 safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
-  t.timestamps :null => false
+  t.timestamps null: false
 end
 
 safe_partman_create_parent :table, key: :created_at, interval: "weekly"
@@ -304,13 +304,13 @@ With custom overrides:
 
 ```ruby
 safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
-  t.timestamps :null => false
+  t.timestamps null: false
   t.text :some_column
 end
 
 # Partman will reference the template table to create unique indexes on child tables
 safe_create_table :table_template, id: false do |t|
-  t.text :some_column, index: { unique: true }
+  t.text :some_column, index: {unique: true}
 end
 
 safe_partman_create_parent :table,
@@ -331,7 +331,7 @@ If you wish to define these options, you must use this method.
 
 ```ruby
 safe_create_partitioned_table :table, type: :range, key: :created_at do |t|
-  t.timestamps :null => false
+  t.timestamps null: false
 end
 
 unsafe_partman_create_parent :table,
@@ -366,7 +366,7 @@ safe_partman_update_config :table,
 
 #### unsafe\_partman\_update\_config
 
-As mentioned previously, we have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
+As with creating a partman parent table, we have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
 If you wish to define these options, you must use this method.
 
 ```ruby

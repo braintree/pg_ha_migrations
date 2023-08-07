@@ -52,32 +52,31 @@ ActiveRecord::Tasks::DatabaseTasks.drop_current
 ActiveRecord::Tasks::DatabaseTasks.create_current
 ActiveRecord::Base.establish_connection(config)
 
-class DatabaseHelper
-  class << self
-    def drop_objects
-      ActiveRecord::Base.connection.select_values("SELECT rolname FROM pg_roles WHERE rolname NOT SIMILAR TO '(postgres|pg_%)'").each do |role|
-        ActiveRecord::Base.connection.execute(<<~SQL)
-          REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM #{role};
-          DROP ROLE #{role};
-        SQL
-      end
-
+module DatabaseHelper
+  def self.drop_objects
+    ActiveRecord::Base.connection.select_values("SELECT rolname FROM pg_roles WHERE rolname NOT SIMILAR TO '(postgres|pg_%)'").each do |role|
       ActiveRecord::Base.connection.execute(<<~SQL)
-        DROP EXTENSION IF EXISTS pg_partman CASCADE;
-        DROP SCHEMA IF EXISTS partman CASCADE;
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM #{role};
+        DROP ROLE #{role};
       SQL
+    end
 
-      # Drop parent partition tables first to automatically drop children
-      ActiveRecord::Base.connection.select_values("SELECT c.relname FROM pg_class c JOIN pg_partitioned_table p on c.oid = p.partrelid").each do |table|
-        ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
-      end
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      DROP EXTENSION IF EXISTS pg_partman CASCADE;
+      DROP SCHEMA IF EXISTS partman CASCADE;
+    SQL
 
-      ActiveRecord::Base.connection.tables.each do |table|
-        ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
-      end
-      ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
-        ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
-      end
+    # Drop parent partition tables first to automatically drop children
+    ActiveRecord::Base.connection.select_values("SELECT c.relname FROM pg_class c JOIN pg_partitioned_table p on c.oid = p.partrelid").each do |table|
+      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
+    end
+
+    ActiveRecord::Base.connection.tables.each do |table|
+      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
+    end
+
+    ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
+      ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
     end
   end
 end
