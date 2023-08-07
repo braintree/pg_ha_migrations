@@ -324,18 +324,14 @@ module PgHaMigrations::SafeStatements
     formatted_start_partition = nil
 
     if start_partition.present?
-      # Rails 7+ prefers to_fs(:db) and has deprecated to_s(:db)
-      %i[to_fs to_s].each do |meth|
-        begin
-          formatted_start_partition = start_partition.send(meth, :db)
-        rescue NoMethodError, ArgumentError
-        end
-
-        break if formatted_start_partition.present?
+      if !start_partition.is_a?(Date) && !start_partition.is_a?(Time) && !start_partition.is_a?(DateTime)
+        raise PgHaMigrations::InvalidMigrationError, "Expected <start_partition> to be Date, Time, or DateTime object but received #{start_partition.class}"
       end
 
-      if !formatted_start_partition.present?
-        raise PgHaMigrations::InvalidMigrationError, "Expected <start_partition> to be Date, Time, or DateTime object but received #{start_partition.class}"
+      formatted_start_partition = if start_partition.respond_to?(:to_fs)
+        start_partition.to_fs(:db)
+      else
+        start_partition.to_s(:db)
       end
     end
 

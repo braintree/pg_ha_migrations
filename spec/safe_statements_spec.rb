@@ -2277,7 +2277,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   end
 
                   safe_create_table :foos3_template, id: false do |t|
-                    t.text :text_column, index: { unique: true }
+                    t.text :text_column, index: {unique: true}
                   end
 
                   unsafe_partman_create_parent "public.foos3",
@@ -2293,17 +2293,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
               end
 
-              allow(migration.current_time).to receive(:to_fs).and_call_original
-              allow(migration.current_time).to receive(:to_s).and_call_original
-
               if ActiveRecord::VERSION::MAJOR < 7
-                # we loop through each method until to_s(:db) finally works
-                expect(migration.current_time).to receive(:to_fs).with(:db)
-                expect(migration.current_time).to receive(:to_s).with(:db)
+                expect(migration.current_time).to receive(:to_s).with(:db).and_call_original
               else
-                # we break out of the loop early because to_fs(:db) works
-                expect(migration.current_time).to receive(:to_fs).with(:db)
-                expect(migration.current_time).to_not receive(:to_s)
+                expect(migration.current_time).to receive(:to_fs).with(:db).and_call_original
               end
 
               migration.suppress_messages { migration.migrate(:up) }
@@ -2523,6 +2516,18 @@ RSpec.describe PgHaMigrations::SafeStatements do
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
               end.to raise_error(PgHaMigrations::InvalidMigrationError, "Expected table to be in the format <table> or <schema>.<table> but received foo.bar.foos3")
+            end
+
+            it "raises error when invalid type used for start partition" do
+              migration = Class.new(migration_klass) do
+                def up
+                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", start_partition: "garbage"
+                end
+              end
+
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Expected <start_partition> to be Date, Time, or DateTime object but received String")
             end
           end
         end
