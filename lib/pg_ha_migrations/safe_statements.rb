@@ -347,11 +347,9 @@ module PgHaMigrations::SafeStatements
 
     create_parent_sql = create_parent_options.map { |k, v| "p_#{k} := #{connection.quote(v)}" }.join(", ")
 
-    log_message = "partman_create_parent(#{table}, " \
+    log_message = "partman_create_parent(#{table.inspect}, " \
       "partition_key: #{partition_key.inspect}, " \
       "interval: #{interval.inspect}, " \
-      "infinite_time_partitions: #{infinite_time_partitions.inspect}, " \
-      "inherit_privileges: #{inherit_privileges.inspect}, " \
       "premake: #{premake.inspect}, " \
       "start_partition: #{start_partition.inspect}, " \
       "template_table: #{template_table.inspect})"
