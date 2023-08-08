@@ -355,7 +355,7 @@ module PgHaMigrations::SafeStatements
       "template_table: #{template_table.inspect})"
 
     say_with_time(log_message) do
-      unsafe_execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+      connection.execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
     end
 
     update_config_options = {
@@ -398,7 +398,7 @@ module PgHaMigrations::SafeStatements
 
   def safe_partman_reapply_privileges(table)
     say_with_time "partman_reapply_privileges(#{table.inspect})" do
-      unsafe_execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_table_name_for_partman(table)}')")
+      connection.execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_table_name_for_partman(table)}')")
     end
   end
 
