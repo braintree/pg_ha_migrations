@@ -433,6 +433,7 @@ module PgHaMigrations::SafeStatements
       FROM pg_tables
       WHERE tablename = '#{identifiers.last}' AND schemaname = #{schema_conditional}
       ORDER BY array_position(current_schemas(false), schemaname)
+      LIMIT 1
     SQL
 
     raise PgHaMigrations::InvalidMigrationError, "Could not find table #{table}" unless schema.present?
