@@ -16,6 +16,48 @@ RSpec.describe PgHaMigrations::SafeStatements do
     end
   end
 
+  def partitions_for_table(table)
+    ActiveRecord::Base.connection.select_values(<<~SQL)
+      SELECT child.relname
+      FROM pg_inherits
+        JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+        JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+      WHERE parent.relname = '#{table}'
+    SQL
+  end
+
+  def grantees_for_table(table)
+    ActiveRecord::Base.connection.select_values(<<~SQL)
+      SELECT DISTINCT(grantee)
+      FROM information_schema.role_table_grants
+      WHERE table_name = '#{table}'
+    SQL
+  end
+
+  def create_range_partitioned_table(table, migration_klass, with_template: false)
+    migration = Class.new(migration_klass) do
+      class_attribute :table, :with_template, instance_accessor: true
+
+      self.table = table
+      self.with_template = with_template
+
+      def up
+        safe_create_partitioned_table table, type: :range, partition_key: :created_at do |t|
+          t.timestamps null: false
+          t.text :text_column
+        end
+
+        if with_template
+          safe_create_table "#{table}_template", id: false do |t|
+            t.text :text_column, index: {unique: true}
+          end
+        end
+      end
+    end
+
+    migration.suppress_messages { migration.migrate(:up) }
+  end
+
   def pool_config
     if ActiveRecord.gem_version >= Gem::Version.new("7.0")
       ActiveRecord::ConnectionAdapters::PoolConfig.new(
@@ -2149,13 +2191,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
         describe "unsafe_partman_create_parent" do
           context "when extension not installed" do
             it "raises error" do
+              create_range_partitioned_table(:foos3, migration_klass)
+
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
@@ -2174,26 +2213,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "creates child partitions with defaults" do
+              create_range_partitioned_table(:foos3, migration_klass)
+
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
               migration.suppress_messages { migration.migrate(:up) }
 
-              child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
-                SELECT child.relname
-                FROM pg_inherits
-                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
-                WHERE parent.relname = 'foos3'
-              SQL
+              child_tables = partitions_for_table(:foos3)
 
               expect(child_tables.size).to eq(10)
               expect(child_tables).to include("foos3_default")
@@ -2225,26 +2255,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "creates child partitions with defaults" do
+              create_range_partitioned_table(:foos3, migration_klass)
+
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
               migration.suppress_messages { migration.migrate(:up) }
 
-              child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
-                SELECT child.relname
-                FROM pg_inherits
-                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
-                WHERE parent.relname = 'foos3'
-              SQL
+              child_tables = partitions_for_table(:foos3)
 
               expect(child_tables.size).to eq(10)
               expect(child_tables).to include("foos3_default")
@@ -2265,27 +2286,20 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "creates child partitions with custom options" do
+              create_range_partitioned_table(:foos3, migration_klass, with_template: true)
+
               migration = Class.new(migration_klass) do
-                def self.current_time
-                  @current_time ||= Time.current
-                end
+                class_attribute :current_time, instance_accessor: true
+
+                self.current_time = Time.current
 
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
-                  safe_create_table :foos3_template, id: false do |t|
-                    t.text :text_column, index: {unique: true}
-                  end
-
                   unsafe_partman_create_parent "public.foos3",
                     partition_key: :created_at,
                     interval: "weekly",
                     template_table: "public.foos3_template",
                     premake: 1,
-                    start_partition: self.class.current_time,
+                    start_partition: current_time,
                     infinite_time_partitions: false,
                     inherit_privileges: false,
                     retention: "60 days",
@@ -2301,13 +2315,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration.suppress_messages { migration.migrate(:up) }
 
-              child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
-                SELECT child.relname
-                FROM pg_inherits
-                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
-                WHERE parent.relname = 'foos3'
-              SQL
+              child_tables = partitions_for_table(:foos3)
 
               expect(child_tables.size).to eq(3)
               expect(child_tables).to include("foos3_default")
@@ -2338,18 +2346,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "uses parent table listed first in the search path when multiple present" do
+              create_range_partitioned_table("public.foos3", migration_klass)
+              create_range_partitioned_table("partman.foos3", migration_klass)
+
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table "public.foos3", type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
-                  safe_create_partitioned_table "partman.foos3", type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
@@ -2444,13 +2445,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when template table does not exist" do
+              create_range_partitioned_table(:foos3, migration_klass)
+
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", template_table: :foos3_template
                 end
               end
@@ -2461,13 +2459,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when template table does not exist and fully qualified name provided" do
+              create_range_partitioned_table(:foos3, migration_klass)
+
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", template_table: "public.foos3_template"
                 end
               end
@@ -2478,13 +2473,19 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when parent table is not partitioned" do
-              migration = Class.new(migration_klass) do
+              setup_migration = Class.new(migration_klass) do
                 def up
                   safe_create_table :foos3 do |t|
                     t.timestamps :null => false
                     t.text :text_column
                   end
+                end
+              end
 
+              setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+              migration = Class.new(migration_klass) do
+                def up
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
@@ -2591,18 +2592,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "updates values and reapplies privileges when inherit_privileges changes from true to false" do
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
+              create_range_partitioned_table(:foos3, migration_klass)
 
+              setup_migration = Class.new(migration_klass) do
+                def up
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
-              migration.suppress_messages { migration.migrate(:up) }
+              setup_migration.suppress_messages { setup_migration.migrate(:up) }
 
               migration = Class.new(migration_klass) do
                 def up
@@ -2632,13 +2630,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "updates values and reapplies privileges when inherit_privileges changes from false to true" do
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
+              create_range_partitioned_table(:foos3, migration_klass)
 
+              setup_migration = Class.new(migration_klass) do
+                def up
                   unsafe_partman_create_parent :foos3,
                     partition_key: :created_at,
                     interval: "monthly",
@@ -2647,7 +2642,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
               end
 
-              migration.suppress_messages { migration.migrate(:up) }
+              setup_migration.suppress_messages { setup_migration.migrate(:up) }
 
               migration = Class.new(migration_klass) do
                 def up
@@ -2669,18 +2664,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "updates values and does not reapply privileges when inherit_privileges does not change" do
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
+              create_range_partitioned_table(:foos3, migration_klass)
 
+              setup_migration = Class.new(migration_klass) do
+                def up
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
-              migration.suppress_messages { migration.migrate(:up) }
+              setup_migration.suppress_messages { setup_migration.migrate(:up) }
 
               migration = Class.new(migration_klass) do
                 def up
@@ -2714,13 +2706,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when table exists but isn't configured with partman" do
+              create_range_partitioned_table(:foos3, migration_klass)
+
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
                   unsafe_partman_update_config :foos3, inherit_privileges: true
                 end
               end
@@ -2767,13 +2756,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "applies privileges to new and existing child tables" do
-              migration1 = Class.new(migration_klass) do
-                def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
+              create_range_partitioned_table(:foos3, migration_klass)
 
+              setup_migration = Class.new(migration_klass) do
+                def up
                   unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
 
                   unsafe_execute(<<~SQL)
@@ -2783,47 +2769,37 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
               end
 
-              migration2 = Class.new(migration_klass) do
-                def up
-                  safe_partman_reapply_privileges :foos3
-                end
-              end
+              setup_migration.suppress_messages { setup_migration.migrate(:up) }
 
-              migration1.suppress_messages { migration1.migrate(:up) }
+              child_tables = partitions_for_table(:foos3)
 
-              child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
-                SELECT child.relname
-                FROM pg_inherits
-                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
-                WHERE parent.relname = 'foos3'
-              SQL
-
+              # post setup validation
               child_tables.each do |table|
-                grantees = ActiveRecord::Base.connection.select_values(<<~SQL)
-                  SELECT DISTINCT(grantee)
-                  FROM information_schema.role_table_grants
-                  WHERE table_name = '#{table}'
-                SQL
+                grantees = grantees_for_table(table)
 
                 # the role was added after the partitions were created
                 # and is not automatically propagated
                 expect(grantees).to contain_exactly("postgres")
               end
 
-              migration2.suppress_messages { migration2.migrate(:up) }
+              # this is the main subject of the test
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_partman_reapply_privileges :foos3
+                end
+              end
 
+              migration.suppress_messages { migration.migrate(:up) }
+
+              # post reapply privileges validation
               child_tables.each do |table|
-                grantees = ActiveRecord::Base.connection.select_values(<<~SQL)
-                  SELECT DISTINCT(grantee)
-                  FROM information_schema.role_table_grants
-                  WHERE table_name = '#{table}'
-                SQL
+                grantees = grantees_for_table(table)
 
                 # existing child tables should get privileges from parent after reapplying
                 expect(grantees).to contain_exactly("postgres", "foo")
               end
 
+              # secondary setup and validation to ensure partman respects inherit privileges
               PgHaMigrations::PartmanConfig
                 .find("public.foos3")
                 .update!(premake: 10)
@@ -2831,22 +2807,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
               # create additional child partitions
               ActiveRecord::Base.connection.execute("CALL public.run_maintenance_proc()")
 
-              new_child_tables = ActiveRecord::Base.connection.select_values(<<~SQL)
-                SELECT child.relname
-                FROM pg_inherits
-                  JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-                  JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
-                WHERE parent.relname = 'foos3'
-              SQL
+              new_child_tables = partitions_for_table(:foos3)
 
               expect(new_child_tables.size).to be > child_tables.size
 
               new_child_tables.each do |table|
-                grantees = ActiveRecord::Base.connection.select_values(<<~SQL)
-                  SELECT DISTINCT(grantee)
-                  FROM information_schema.role_table_grants
-                  WHERE table_name = '#{table}'
-                SQL
+                grantees = grantees_for_table(table)
 
                 # new child tables automatically get privileges from parent
                 expect(grantees).to contain_exactly("postgres", "foo")
@@ -2878,13 +2844,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when table exists but isn't managed by partman" do
+              create_range_partitioned_table(:foos3, migration_klass)
+
               migration = Class.new(migration_klass) do
                 def up
-                  safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                    t.timestamps :null => false
-                    t.text :text_column
-                  end
-
                   safe_partman_reapply_privileges :foos3
                 end
               end
