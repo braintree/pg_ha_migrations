@@ -1,5 +1,13 @@
 module PgHaMigrations::SafeStatements
-  VALID_PARTITION_TYPES = %i[range list hash]
+  PARTITION_TYPES = %i[range list hash]
+
+  PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
+    infinite_time_partitions
+    inherit_privileges
+    premake
+    retention
+    retention_keep_table
+  ]
 
   def safe_added_columns_without_default_value
     @safe_added_columns_without_default_value ||= []
@@ -212,11 +220,11 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def safe_create_partitioned_table(table, key:, type:, infer_primary_key: nil, **options, &block)
-    raise ArgumentError, "Expected <key> to be present" unless key.present?
+  def safe_create_partitioned_table(table, partition_key:, type:, infer_primary_key: nil, **options, &block)
+    raise ArgumentError, "Expected <partition_key> to be present" unless partition_key.present?
 
-    unless VALID_PARTITION_TYPES.include?(type)
-      raise ArgumentError, "Expected <type> to be symbol in #{VALID_PARTITION_TYPES}"
+    unless PARTITION_TYPES.include?(type)
+      raise ArgumentError, "Expected <type> to be symbol in #{PARTITION_TYPES} but received #{type.inspect}"
     end
 
     if ActiveRecord::Base.connection.postgresql_version < 10_00_00
@@ -240,15 +248,15 @@ module PgHaMigrations::SafeStatements
       options[:id] = :bigserial
     end
 
-    quoted_partition_key = if key.is_a?(Proc)
+    quoted_partition_key = if partition_key.is_a?(Proc)
       # Lambda syntax, like in other migration methods, implies an expression that
       # cannot be easily sanitized.
       #
       # e.g ->{ "(created_at::date)" }
-      key.call.to_s
+      partition_key.call.to_s
     else
       # Otherwise, assume key is a column name or array of column names
-      Array.wrap(key).map { |col| connection.quote_column_name(col) }.join(",")
+      Array.wrap(partition_key).map { |col| connection.quote_column_name(col) }.join(",")
     end
 
     options[:options] = "PARTITION BY #{type.upcase} (#{quoted_partition_key})"
@@ -266,9 +274,165 @@ module PgHaMigrations::SafeStatements
         arr << col.name
       end
 
-      if infer_primary_key && !key.is_a?(Proc) && ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-        td.primary_keys(pk_columns.concat(Array.wrap(key)).map(&:to_s).uniq)
+      if infer_primary_key && !partition_key.is_a?(Proc) && ActiveRecord::Base.connection.postgresql_version >= 11_00_00
+        td.primary_keys(pk_columns.concat(Array.wrap(partition_key)).map(&:to_s).uniq)
       end
+    end
+  end
+
+  def safe_partman_create_parent(table, **options)
+    if options[:retention].present? || options[:retention_keep_table] == false
+      raise PgHaMigrations::UnsafeMigrationError.new(":retention and/or :retention_keep_table => false can potentially result in data loss if misconfigured. Please use unsafe_partman_create_parent if you want to set these options")
+    end
+
+    unsafe_partman_create_parent(table, **options)
+  end
+
+  def unsafe_partman_create_parent(
+    table,
+    partition_key:,
+    interval:,
+    infinite_time_partitions: true,
+    inherit_privileges: true,
+    premake: nil,
+    start_partition: nil,
+    template_table: nil,
+    retention: nil,
+    retention_keep_table: nil
+  )
+    raise ArgumentError, "Expected <partition_key> to be present" unless partition_key.present?
+    raise ArgumentError, "Expected <interval> to be present" unless interval.present?
+
+    if ActiveRecord::Base.connection.postgresql_version < 11_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Native partitioning with partman not supported on Postgres databases before version 11"
+    end
+
+    formatted_start_partition = nil
+
+    if start_partition.present?
+      if !start_partition.is_a?(Date) && !start_partition.is_a?(Time) && !start_partition.is_a?(DateTime)
+        raise PgHaMigrations::InvalidMigrationError, "Expected <start_partition> to be Date, Time, or DateTime object but received #{start_partition.class}"
+      end
+
+      formatted_start_partition = if start_partition.respond_to?(:to_fs)
+        start_partition.to_fs(:db)
+      else
+        start_partition.to_s(:db)
+      end
+    end
+
+    create_parent_options = {
+      parent_table: _fully_qualified_table_name_for_partman(table),
+      template_table: template_table ? _fully_qualified_table_name_for_partman(template_table) : nil,
+      control: partition_key,
+      type: "native",
+      interval: interval,
+      premake: premake,
+      start_partition: formatted_start_partition,
+    }.compact
+
+    create_parent_sql = create_parent_options.map { |k, v| "p_#{k} := #{connection.quote(v)}" }.join(", ")
+
+    log_message = "partman_create_parent(#{table.inspect}, " \
+      "partition_key: #{partition_key.inspect}, " \
+      "interval: #{interval.inspect}, " \
+      "premake: #{premake.inspect}, " \
+      "start_partition: #{start_partition.inspect}, " \
+      "template_table: #{template_table.inspect})"
+
+    say_with_time(log_message) do
+      connection.execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+    end
+
+    update_config_options = {
+      infinite_time_partitions: infinite_time_partitions,
+      inherit_privileges: inherit_privileges,
+      retention: retention,
+      retention_keep_table: retention_keep_table,
+    }.compact
+
+    unsafe_partman_update_config(create_parent_options[:parent_table], **update_config_options)
+  end
+
+  def safe_partman_update_config(table, **options)
+    if options[:retention].present? || options[:retention_keep_table] == false
+      raise PgHaMigrations::UnsafeMigrationError.new(":retention and/or :retention_keep_table => false can potentially result in data loss if misconfigured. Please use unsafe_partman_update_config if you want to set these options")
+    end
+
+    unsafe_partman_update_config(table, **options)
+  end
+
+  def unsafe_partman_update_config(table, **options)
+    invalid_options = options.keys - PARTMAN_UPDATE_CONFIG_OPTIONS
+
+    raise ArgumentError, "Unrecognized argument(s): #{invalid_options}" unless invalid_options.empty?
+
+    PgHaMigrations::PartmanConfig.schema = _quoted_partman_schema
+
+    config = PgHaMigrations::PartmanConfig.find(_fully_qualified_table_name_for_partman(table))
+
+    config.assign_attributes(**options)
+
+    inherit_privileges_changed = config.inherit_privileges_changed?
+
+    say_with_time "partman_update_config(#{table.inspect}, #{options.map { |k,v| "#{k}: #{v.inspect}" }.join(", ")})" do
+      config.save!
+    end
+
+    safe_partman_reapply_privileges(table) if inherit_privileges_changed
+  end
+
+  def safe_partman_reapply_privileges(table)
+    say_with_time "partman_reapply_privileges(#{table.inspect})" do
+      connection.execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_table_name_for_partman(table)}')")
+    end
+  end
+
+  def _quoted_partman_schema
+    schema = connection.select_value(<<~SQL)
+      SELECT nspname
+      FROM pg_namespace JOIN pg_extension
+        ON pg_namespace.oid = pg_extension.extnamespace
+      WHERE pg_extension.extname = 'pg_partman'
+    SQL
+
+    raise PgHaMigrations::InvalidMigrationError, "The pg_partman extension is not installed" unless schema.present?
+
+    connection.quote_schema_name(schema)
+  end
+
+  def _fully_qualified_table_name_for_partman(table)
+    identifiers = table.to_s.split(".")
+
+    raise PgHaMigrations::InvalidMigrationError, "Expected table to be in the format <table> or <schema>.<table> but received #{table}" if identifiers.size > 2
+
+    identifiers.each { |identifier| _validate_partman_identifier(identifier) }
+
+    schema_conditional = if identifiers.size > 1
+      "'#{identifiers.first}'"
+    else
+      "ANY (current_schemas(false))"
+    end
+
+    schema = connection.select_value(<<~SQL)
+      SELECT schemaname
+      FROM pg_tables
+      WHERE tablename = '#{identifiers.last}' AND schemaname = #{schema_conditional}
+      ORDER BY array_position(current_schemas(false), schemaname)
+      LIMIT 1
+    SQL
+
+    raise PgHaMigrations::InvalidMigrationError, "Could not find table #{table}" unless schema.present?
+
+    _validate_partman_identifier(schema)
+
+    # Quoting is unneeded since _validate_partman_identifier ensures the schema / table use standard naming conventions
+    "#{schema}.#{identifiers.last}"
+  end
+
+  def _validate_partman_identifier(identifier)
+    if identifier.to_s !~ /^[a-z_][a-z_\d]*$/
+      raise PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores"
     end
   end
 

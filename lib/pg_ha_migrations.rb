@@ -56,6 +56,7 @@ end
 
 require "pg_ha_migrations/blocking_database_transactions"
 require "pg_ha_migrations/blocking_database_transactions_reporter"
+require "pg_ha_migrations/partman_config"
 require "pg_ha_migrations/unsafe_statements"
 require "pg_ha_migrations/safe_statements"
 require "pg_ha_migrations/dependent_objects_checks"

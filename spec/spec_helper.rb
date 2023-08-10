@@ -1,6 +1,7 @@
 require "bundler/setup"
 require "pg_ha_migrations"
 require "db-query-matchers"
+require "pry"
 
 RSpec.configure do |config|
   # Enable flags like --only-failures and --next-failure
@@ -17,22 +18,11 @@ RSpec.configure do |config|
     server_version = ActiveRecord::Base.connection.select_value("SHOW server_version")
     puts "DEBUG: Connecting to Postgres server version #{server_version}"
 
-    ActiveRecord::Base.connection.tables.each do |table|
-      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
-    end
-    ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
-      ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
-    end
+    DatabaseHelper.drop_objects
   end
 
   config.after(:each) do
-    # ActiveRecord::Base.connection.tables does not include partitioned tables in Rails 5.1
-    ActiveRecord::Base.connection.select_values("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").each do |table|
-      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
-    end
-    ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
-      ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
-    end
+    DatabaseHelper.drop_objects
   end
 end
 
@@ -61,3 +51,32 @@ ActiveRecord::Tasks::DatabaseTasks.instance_variable_set('@env', "test")
 ActiveRecord::Tasks::DatabaseTasks.drop_current
 ActiveRecord::Tasks::DatabaseTasks.create_current
 ActiveRecord::Base.establish_connection(config)
+
+module DatabaseHelper
+  def self.drop_objects
+    ActiveRecord::Base.connection.select_values("SELECT rolname FROM pg_roles WHERE rolname NOT SIMILAR TO '(postgres|pg_%)'").each do |role|
+      ActiveRecord::Base.connection.execute(<<~SQL)
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM #{role};
+        DROP ROLE #{role};
+      SQL
+    end
+
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      DROP EXTENSION IF EXISTS pg_partman CASCADE;
+      DROP SCHEMA IF EXISTS partman CASCADE;
+    SQL
+
+    # Drop parent partition tables first to automatically drop children
+    ActiveRecord::Base.connection.select_values("SELECT c.relname FROM pg_class c JOIN pg_partitioned_table p on c.oid = p.partrelid").each do |table|
+      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
+    end
+
+    ActiveRecord::Base.connection.tables.each do |table|
+      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
+    end
+
+    ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
+      ActiveRecord::Base.connection.execute("DROP TYPE #{enum} CASCADE")
+    end
+  end
+end
