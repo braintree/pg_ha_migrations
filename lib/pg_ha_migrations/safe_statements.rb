@@ -177,18 +177,7 @@ module PgHaMigrations::SafeStatements
 
     schema, table = _schema_and_table_for(table)
 
-    is_partitioned = select_value(<<~SQL)
-      SELECT EXISTS (
-        SELECT 1
-        FROM pg_partitioned_table, pg_class, pg_namespace
-        WHERE pg_class.oid = pg_partitioned_table.partrelid
-          AND pg_class.relnamespace = pg_namespace.oid
-          AND pg_class.relname = #{quote(table)}
-          AND pg_namespace.nspname = #{quote(schema)}
-      )
-    SQL
-
-    raise PgHaMigrations::InvalidMigrationError, "Table #{table} is not a partitioned table" unless is_partitioned
+    raise PgHaMigrations::InvalidMigrationError, "Table #{table} is not a partitioned table" unless _partitioned_table?(schema, table)
 
     name_suffix = "#{Array.wrap(columns).join("_")}_idx" unless name_suffix.present?
 
@@ -201,6 +190,10 @@ module PgHaMigrations::SafeStatements
       WHERE parent.relname = #{quote(table)}
         AND pg_namespace.nspname = #{quote(schema)}
     SQL
+
+    child_tables.each do |child_table|
+      raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{table} contains sub-partitions" if _partitioned_table?(schema, child_table)
+    end
 
     parent_index = "#{table}_#{name_suffix}"
 
@@ -507,6 +500,19 @@ module PgHaMigrations::SafeStatements
     else
       !is_valid.nil?
     end
+  end
+
+  def _partitioned_table?(schema, table)
+    select_value(<<~SQL)
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_partitioned_table, pg_class, pg_namespace
+        WHERE pg_class.oid = pg_partitioned_table.partrelid
+          AND pg_class.relnamespace = pg_namespace.oid
+          AND pg_class.relname = #{quote(table)}
+          AND pg_namespace.nspname = #{quote(schema)}
+      )
+    SQL
   end
 
   def _per_migration_caller

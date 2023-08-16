@@ -1472,6 +1472,33 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table foos3 is not a partitioned table")
           end
 
+          it "raises error when sub-partitioning detected" do
+            create_range_partitioned_table(:foos3, migration_klass)
+            create_range_partitioned_table(:foos3_sub, migration_klass)
+
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute(<<~SQL)
+                  ALTER TABLE foos3
+                  ATTACH PARTITION foos3_sub
+                  FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
+                SQL
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Partitioned table foos3 contains sub-partitions")
+          end
+
           it "raises error when index invalid" do
             create_range_partitioned_table(:foos3, migration_klass)
 
