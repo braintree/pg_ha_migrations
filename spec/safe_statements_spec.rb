@@ -1952,7 +1952,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -1974,7 +1974,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -1991,7 +1991,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :list, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2013,7 +2013,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :list, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2030,7 +2030,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :hash, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2052,7 +2052,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :hash, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2069,7 +2069,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2086,7 +2086,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at, primary_key: :pk do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2103,7 +2103,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: :pk, primary_key: :pk do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2120,7 +2120,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: ->{ "(created_at::date)" } do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2137,7 +2137,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: [:created_at, :text_column] do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2154,7 +2154,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, infer_primary_key: false, partition_key: [:created_at, :text_column] do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2175,7 +2175,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: [:created_at, :text_column] do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2192,7 +2192,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, id: false, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2209,7 +2209,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2227,7 +2227,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at, id: :serial do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2247,7 +2247,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2264,7 +2264,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :garbage, partition_key: :created_at do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2279,7 +2279,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration = Class.new(migration_klass) do
               def up
                 safe_create_partitioned_table :foos3, type: :range, partition_key: nil do |t|
-                  t.timestamps :null => false
+                  t.timestamps null: false
                   t.text :text_column
                 end
               end
@@ -2615,7 +2615,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               setup_migration = Class.new(migration_klass) do
                 def up
                   safe_create_table :foos3 do |t|
-                    t.timestamps :null => false
+                    t.timestamps null: false
                     t.text :text_column
                   end
                 end
