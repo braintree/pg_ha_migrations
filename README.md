@@ -188,6 +188,34 @@ Safely remove an index. Migrations that contain this statement must also include
 safe_remove_concurrent_index :table, :name => :index_name
 ```
 
+#### safe\_add\_concurrent\_partitioned\_index
+
+Add an index to a natively partitioned table concurrently, as described in the [table partitioning docs](https://www.postgresql.org/docs/current/ddl-partitioning.html).
+
+> To avoid long lock times, it is possible to use `CREATE INDEX ON ONLY` the partitioned table; such an index is marked invalid, and the partitions do not get the index applied automatically.
+> The indexes on partitions can be created individually using `CONCURRENTLY`, and then attached to the index on the parent using `ALTER INDEX .. ATTACH PARTITION`.
+> Once indexes for all partitions are attached to the parent index, the parent index is marked valid automatically.
+
+```ruby
+# Assuming this table has partitions child1 and child2, the following indexes will be created:
+#   - partitioned_table_column_idx
+#   - child1_column_idx (attached to partitioned_table_column_idx)
+#   - child2_column_idx (attached to partitioned_table_column_idx)
+safe_add_concurrent_partitioned_index :partitioned_table, :column
+```
+
+Add a composite index with custom naming.
+
+```ruby
+# Assuming this table has partitions child1 and child2, the following indexes will be created:
+#   - partitioned_table_index_suffix
+#   - child1_index_suffix (attached to partitioned_table_index_suffix)
+#   - child2_index_suffix (attached to partitioned_table_index_suffix)
+safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name_suffix: "index_suffix"
+```
+
+Note: this method does not support sub-partitioning.
+
 #### safe\_add\_unvalidated\_check\_constraint
 
 Safely add a `CHECK` constraint. The constraint will not be immediately validated on existing rows to avoid a full table scan while holding an exclusive lock. After adding the constraint, you'll need to use `safe_validate_check_constraint` to validate existing rows.
