@@ -16,13 +16,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
     end
   end
 
-  def partitions_for_table(table)
+  def partitions_for_table(table, schema: "public")
     ActiveRecord::Base.connection.select_values(<<~SQL)
       SELECT child.relname
       FROM pg_inherits
         JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
         JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+        JOIN pg_namespace    ON pg_namespace.oid      = child.relnamespace
       WHERE parent.relname = '#{table}'
+        AND pg_namespace.nspname = '#{schema}'
     SQL
   end
 
@@ -34,12 +36,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
     SQL
   end
 
-  def create_range_partitioned_table(table, migration_klass, with_template: false)
+  def create_range_partitioned_table(table, migration_klass, with_template: false, with_partman: false)
     migration = Class.new(migration_klass) do
-      class_attribute :table, :with_template, instance_accessor: true
+      class_attribute \
+        :table,
+        :with_template,
+        :with_partman,
+        instance_accessor: true
 
       self.table = table
       self.with_template = with_template
+      self.with_partman = with_partman
 
       def up
         safe_create_partitioned_table table, type: :range, partition_key: :created_at do |t|
@@ -51,6 +58,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
           safe_create_table "#{table}_template", id: false do |t|
             t.text :text_column, index: {unique: true}
           end
+        end
+
+        if with_partman
+          template_table = with_template ? "#{table}_template" : nil
+
+          safe_partman_create_parent(
+            table,
+            partition_key: :created_at,
+            interval: "weekly",
+            template_table: template_table
+          )
         end
       end
     end
@@ -1263,6 +1281,239 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "safe_add_concurrent_partitioned_index" do
+          before do
+            ActiveRecord::Base.connection.execute(<<~SQL)
+              CREATE SCHEMA partman;
+              CREATE EXTENSION pg_partman SCHEMA partman;
+            SQL
+          end
+
+          it "creates valid index when there are no child partitions" do
+            create_range_partitioned_table(:foos3, migration_klass)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).once
+            expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+
+            indexes = ActiveRecord::Base.connection.indexes(:foos3)
+
+            expect(indexes.size).to eq(1)
+            expect(indexes.first).to have_attributes(
+              table: :foos3,
+              name: "foos3_updated_at_idx",
+              columns: ["updated_at"],
+            )
+          end
+
+          it "creates valid index when multiple child partitions exist" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+
+            # look up indexes on child tables and parent table
+            partitions_for_table(:foos3).append(:foos3).each do |table|
+              indexes = ActiveRecord::Base.connection.indexes(table)
+
+              expect(indexes.size).to eq(1)
+              expect(indexes.first).to have_attributes(
+                table: table,
+                name: "#{table}_updated_at_idx",
+                columns: ["updated_at"],
+              )
+            end
+          end
+
+          it "does not error when index exists and if_not_exists is true" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, if_not_exists: true
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).once
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/IF NOT EXISTS/).once
+            expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+          end
+
+          it "creates valid index when table / index name use non-standard characters" do
+            create_range_partitioned_table("foos3'", migration_klass)
+
+            # partman does not allow table names with non-standard characters
+            # so we need to create a child partition manually
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute(<<~SQL)
+                  CREATE TABLE "foos3'_child" PARTITION OF "foos3'"
+                  FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
+                SQL
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index "foos3'", :updated_at, name_suffix: "bar\""
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).twice
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).once
+
+            # look up indexes on child tables and parent table
+            ["foos3'", "foos3'_child"].each do |table|
+              indexes = ActiveRecord::Base.connection.indexes(table)
+
+              expect(indexes.size).to eq(1)
+              expect(indexes.first).to have_attributes(
+                table: table,
+                name: "#{table}_bar\"",
+                columns: ["updated_at"],
+              )
+            end
+          end
+
+          it "creates valid index when duplicate table exists in different schema" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            create_range_partitioned_table("partman.foos3", migration_klass, with_partman: true)
+
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, name_suffix: "bar"
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index "partman.foos3", :updated_at, name_suffix: "bar"
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
+            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+
+            # look up indexes on child tables and parent table in partman schema
+            partitions_for_table(:foos3, schema: "partman").append("foos3").each do |table|
+              indexes = ActiveRecord::Base.connection.indexes("partman.#{table}")
+
+              expect(indexes.size).to eq(1)
+              expect(indexes.first).to have_attributes(
+                table: "partman.#{table}",
+                name: "#{table}_bar",
+                columns: ["updated_at"],
+              )
+            end
+          end
+
+          it "raises error when table is not partitioned" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos3 do |t|
+                  t.timestamps null: false
+                end
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table foos3 is not a partitioned table")
+          end
+
+          it "raises error when index invalid" do
+            create_range_partitioned_table(:foos3, migration_klass)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_wrap_original do |meth, query|
+              meth.call(query)
+
+              # simulate an invalid index
+              if query =~ /CREATE INDEX/
+                ActiveRecord::Base.connection.execute(<<~SQL)
+                  UPDATE pg_index
+                  SET indisvalid = false
+                  WHERE indexrelid::regclass::text = 'foos3_updated_at_idx'
+                SQL
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Parent index foos3_updated_at_idx is invalid")
+          end
+
+          it "raises error when on < Postgres 11" do
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(10_00_00)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11")
+          end
+        end
+
         describe  "unsafe_add_index" do
           it "raises a helper warning when ActiveRecord is going to swallow per-column options" do
             migration = Class.new(migration_klass) do
@@ -2384,6 +2635,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when non-standard table name is used" do
+              setup_migration = Class.new(migration_klass) do
+                def up
+                  safe_create_table "foos3'" do |t|
+                    t.timestamps null: false
+                    t.text :text_column
+                  end
+                end
+              end
+
+              setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
               migration = Class.new(migration_klass) do
                 def up
                   unsafe_partman_create_parent "foos3'", partition_key: :created_at, interval: "monthly"

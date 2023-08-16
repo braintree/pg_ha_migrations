@@ -170,6 +170,65 @@ module PgHaMigrations::SafeStatements
     unsafe_remove_index(table, **options.merge(:algorithm => :concurrently))
   end
 
+  def safe_add_concurrent_partitioned_index(table, columns, name_suffix: nil, if_not_exists: false)
+    if ActiveRecord::Base.connection.postgresql_version < 11_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11"
+    end
+
+    schema, table = _schema_and_table_for(table)
+
+    is_partitioned = select_value(<<~SQL)
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_partitioned_table, pg_class, pg_namespace
+        WHERE pg_class.oid = pg_partitioned_table.partrelid
+          AND pg_class.relnamespace = pg_namespace.oid
+          AND pg_class.relname = #{quote(table)}
+          AND pg_namespace.nspname = #{quote(schema)}
+      )
+    SQL
+
+    raise PgHaMigrations::InvalidMigrationError, "Table #{table} is not a partitioned table" unless is_partitioned
+
+    name_suffix = "#{Array.wrap(columns).join("_")}_idx" unless name_suffix.present?
+
+    child_tables = select_values(<<~SQL)
+      SELECT child.relname
+      FROM pg_inherits
+        JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+        JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+        JOIN pg_namespace    ON parent.relnamespace = pg_namespace.oid
+      WHERE parent.relname = #{quote(table)}
+        AND pg_namespace.nspname = #{quote(schema)}
+    SQL
+
+    parent_index = "#{table}_#{name_suffix}"
+
+    quoted_columns = Array.wrap(columns).map { |c| quote_column_name(c) }.join(", ")
+
+    unsafe_execute(<<~SQL)
+      CREATE INDEX#{if_not_exists ? " IF NOT EXISTS" : ""} #{quote_column_name(parent_index)}
+      ON ONLY #{quote_schema_name(schema)}.#{quote_table_name(table)} (#{quoted_columns})
+    SQL
+
+    child_tables.each do |child_table|
+      child_index = "#{child_table}_#{name_suffix}"
+
+      next if if_not_exists && _index_exists?(schema, child_index)
+
+      safe_add_concurrent_index("#{quote_schema_name(schema)}.#{child_table}", columns, name: child_index)
+
+      unsafe_execute(<<~SQL)
+        ALTER INDEX #{quote_schema_name(schema)}.#{quote_column_name(parent_index)}
+        ATTACH PARTITION #{quote_schema_name(schema)}.#{quote_column_name(child_index)}
+      SQL
+    end
+
+    if !_index_exists?(schema, parent_index, check_validity: true)
+      raise PgHaMigrations::InvalidMigrationError, "Parent index #{parent_index} is invalid"
+    end
+  end
+
   def safe_set_maintenance_work_mem_gb(gigabytes)
     unsafe_execute("SET maintenance_work_mem = '#{PG::Connection.escape_string(gigabytes.to_s)} GB'")
   end
@@ -402,14 +461,20 @@ module PgHaMigrations::SafeStatements
   end
 
   def _fully_qualified_table_name_for_partman(table)
+    _schema_and_table_for(table).each do |identifier|
+      if identifier.to_s !~ /^[a-z_][a-z_\d]*$/
+        raise PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores"
+      end
+    end.join(".")
+  end
+
+  def _schema_and_table_for(table)
     identifiers = table.to_s.split(".")
 
     raise PgHaMigrations::InvalidMigrationError, "Expected table to be in the format <table> or <schema>.<table> but received #{table}" if identifiers.size > 2
 
-    identifiers.each { |identifier| _validate_partman_identifier(identifier) }
-
     schema_conditional = if identifiers.size > 1
-      "'#{identifiers.first}'"
+      "#{quote(identifiers.first)}"
     else
       "ANY (current_schemas(false))"
     end
@@ -417,22 +482,30 @@ module PgHaMigrations::SafeStatements
     schema = connection.select_value(<<~SQL)
       SELECT schemaname
       FROM pg_tables
-      WHERE tablename = '#{identifiers.last}' AND schemaname = #{schema_conditional}
+      WHERE tablename = #{quote(identifiers.last)} AND schemaname = #{schema_conditional}
       ORDER BY array_position(current_schemas(false), schemaname)
       LIMIT 1
     SQL
 
     raise PgHaMigrations::InvalidMigrationError, "Could not find table #{table}" unless schema.present?
 
-    _validate_partman_identifier(schema)
-
-    # Quoting is unneeded since _validate_partman_identifier ensures the schema / table use standard naming conventions
-    "#{schema}.#{identifiers.last}"
+    [schema, identifiers.last]
   end
 
-  def _validate_partman_identifier(identifier)
-    if identifier.to_s !~ /^[a-z_][a-z_\d]*$/
-      raise PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores"
+  def _index_exists?(schema, index, check_validity: false)
+    is_valid = select_value(<<~SQL)
+      SELECT pg_index.indisvalid
+      FROM pg_index, pg_class, pg_namespace
+      WHERE pg_class.oid = pg_index.indexrelid
+        AND pg_class.relnamespace = pg_namespace.oid
+        AND pg_namespace.nspname = #{quote(schema)}
+        AND pg_class.relname = #{quote(index)}
+    SQL
+
+    if check_validity
+      !!is_valid
+    else
+      !is_valid.nil?
     end
   end
 
