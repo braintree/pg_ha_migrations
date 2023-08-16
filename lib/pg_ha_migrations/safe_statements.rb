@@ -1,4 +1,5 @@
 module PgHaMigrations::SafeStatements
+  MAX_INDEX_NAME_SIZE = 63 # bytes
   PARTITION_TYPES = %i[range list hash]
 
   PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
@@ -181,6 +182,10 @@ module PgHaMigrations::SafeStatements
 
     name_suffix = "#{Array.wrap(columns).join("_")}_idx" unless name_suffix.present?
 
+    parent_index = "#{table}_#{name_suffix}"
+
+    _validate_index_name!(parent_index)
+
     child_tables = select_values(<<~SQL)
       SELECT child.relname
       FROM pg_inherits
@@ -193,9 +198,9 @@ module PgHaMigrations::SafeStatements
 
     child_tables.each do |child_table|
       raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{table} contains sub-partitions" if _partitioned_table?(schema, child_table)
-    end
 
-    parent_index = "#{table}_#{name_suffix}"
+      _validate_index_name!("#{child_table}_#{name_suffix}")
+    end
 
     quoted_columns = Array.wrap(columns).map { |c| quote_column_name(c) }.join(", ")
 
@@ -513,6 +518,12 @@ module PgHaMigrations::SafeStatements
           AND pg_namespace.nspname = #{quote(schema)}
       )
     SQL
+  end
+
+  def _validate_index_name!(name)
+    if name.to_s.bytesize > MAX_INDEX_NAME_SIZE
+      raise PgHaMigrations::InvalidMigrationError, "Index name #{name} is larger than #{MAX_INDEX_NAME_SIZE} bytes. Consider using a custom name."
+    end
   end
 
   def _per_migration_caller

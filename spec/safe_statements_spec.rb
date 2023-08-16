@@ -1526,6 +1526,40 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error(PgHaMigrations::InvalidMigrationError, "Parent index foos3_updated_at_idx is invalid")
           end
 
+          it "raises error when parent index name is too large" do
+            create_range_partitioned_table(:foos3, migration_klass)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, name_suffix: "x" * 58
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::InvalidMigrationError,
+              "Index name foos3_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx is larger than 63 bytes. Consider using a custom name."
+            )
+          end
+
+          it "raises error when child index name is too large" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, name_suffix: "x" * 57
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::InvalidMigrationError,
+              /Index name foos3_p\d{4}w\d{2}_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx is larger than 63 bytes. Consider using a custom name/
+            )
+          end
+
           it "raises error when on < Postgres 11" do
             allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(10_00_00)
 
