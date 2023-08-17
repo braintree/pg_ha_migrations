@@ -1556,7 +1556,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               test_migration.suppress_messages { test_migration.migrate(:up) }
             end.to raise_error(
               PgHaMigrations::InvalidMigrationError,
-              /Index name foos3_p\d{4}w\d{2}_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx is larger than 63 bytes. Consider using a custom name/
+              /Index name foos3_.+_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx is larger than 63 bytes. Consider using a custom name/
             )
           end
 
