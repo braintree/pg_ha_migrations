@@ -171,7 +171,7 @@ module PgHaMigrations::SafeStatements
     unsafe_remove_index(table, **options.merge(:algorithm => :concurrently))
   end
 
-  def safe_add_concurrent_partitioned_index(table, columns, name_suffix: nil, if_not_exists: false)
+  def safe_add_concurrent_partitioned_index(table, columns, if_not_exists: false, name_suffix: nil, using: nil)
     if ActiveRecord::Base.connection.postgresql_version < 11_00_00
       raise PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11"
     end
@@ -205,16 +205,21 @@ module PgHaMigrations::SafeStatements
     quoted_columns = Array.wrap(columns).map { |c| quote_column_name(c) }.join(", ")
 
     unsafe_execute(<<~SQL)
-      CREATE INDEX#{if_not_exists ? " IF NOT EXISTS" : ""} #{quote_column_name(parent_index)}
-      ON ONLY #{quote_schema_name(schema)}.#{quote_table_name(table)} (#{quoted_columns})
+      CREATE INDEX #{if_not_exists ? "IF NOT EXISTS " : ""}#{quote_column_name(parent_index)}
+      ON ONLY #{quote_schema_name(schema)}.#{quote_table_name(table)}
+      #{using ? "USING #{quote_column_name(using)} " : ""}(#{quoted_columns})
     SQL
 
     child_tables.each do |child_table|
       child_index = "#{child_table}_#{name_suffix}"
 
-      next if if_not_exists && _index_exists?(schema, child_index)
-
-      safe_add_concurrent_index("#{quote_schema_name(schema)}.#{child_table}", columns, name: child_index)
+      safe_add_concurrent_index(
+        "#{quote_schema_name(schema)}.#{child_table}",
+        columns,
+        name: child_index,
+        if_not_exists: if_not_exists,
+        using: using,
+      )
 
       unsafe_execute(<<~SQL)
         ALTER INDEX #{quote_schema_name(schema)}.#{quote_column_name(parent_index)}
@@ -222,9 +227,16 @@ module PgHaMigrations::SafeStatements
       SQL
     end
 
-    if !_index_exists?(schema, parent_index, check_validity: true)
-      raise PgHaMigrations::InvalidMigrationError, "Parent index #{parent_index} is invalid"
-    end
+    is_valid = select_value(<<~SQL)
+      SELECT pg_index.indisvalid
+      FROM pg_index, pg_class, pg_namespace
+      WHERE pg_class.oid = pg_index.indexrelid
+        AND pg_class.relnamespace = pg_namespace.oid
+        AND pg_namespace.nspname = #{quote(schema)}
+        AND pg_class.relname = #{quote(parent_index)}
+    SQL
+
+    raise PgHaMigrations::InvalidMigrationError, "Parent index #{parent_index} is invalid" unless is_valid
   end
 
   def safe_set_maintenance_work_mem_gb(gigabytes)
@@ -488,23 +500,6 @@ module PgHaMigrations::SafeStatements
     raise PgHaMigrations::InvalidMigrationError, "Could not find table #{table}" unless schema.present?
 
     [schema, identifiers.last]
-  end
-
-  def _index_exists?(schema, index, check_validity: false)
-    is_valid = select_value(<<~SQL)
-      SELECT pg_index.indisvalid
-      FROM pg_index, pg_class, pg_namespace
-      WHERE pg_class.oid = pg_index.indexrelid
-        AND pg_class.relnamespace = pg_namespace.oid
-        AND pg_namespace.nspname = #{quote(schema)}
-        AND pg_class.relname = #{quote(index)}
-    SQL
-
-    if check_validity
-      !!is_valid
-    else
-      !is_valid.nil?
-    end
   end
 
   def _partitioned_table?(schema, table)

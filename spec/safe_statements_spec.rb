@@ -1314,6 +1314,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               table: :foos3,
               name: "foos3_updated_at_idx",
               columns: ["updated_at"],
+              using: :btree,
             )
           end
 
@@ -1345,6 +1346,41 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   table: table,
                   name: "#{table}_updated_at_idx",
                   columns: ["updated_at"],
+                  using: :btree,
+                )
+              end
+            end
+          end
+
+          it "creates valid hash index when multiple child partitions exist" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, using: :hash
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+            end
+
+            aggregate_failures do
+              # look up indexes on child tables and parent table
+              partitions_for_table(:foos3).append(:foos3).each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
+
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "#{table}_updated_at_idx",
+                  columns: ["updated_at"],
+                  using: :hash,
                 )
               end
             end
@@ -1372,9 +1408,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/IF NOT EXISTS/).once
-              expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/IF NOT EXISTS/).exactly(11).times
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
             end
           end
 
@@ -1419,6 +1455,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   table: table,
                   name: "#{table}_bar\"",
                   columns: ["updated_at"],
+                  using: :btree,
                 )
               end
             end
@@ -1461,6 +1498,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   table: "partman.#{table}",
                   name: "#{table}_bar",
                   columns: ["updated_at"],
+                  using: :btree,
                 )
               end
             end
