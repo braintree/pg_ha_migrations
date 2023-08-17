@@ -1302,8 +1302,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).once
-            expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).once
+              expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+            end
 
             indexes = ActiveRecord::Base.connection.indexes(:foos3)
 
@@ -1328,19 +1330,23 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+            end
 
-            # look up indexes on child tables and parent table
-            partitions_for_table(:foos3).append(:foos3).each do |table|
-              indexes = ActiveRecord::Base.connection.indexes(table)
+            aggregate_failures do
+              # look up indexes on child tables and parent table
+              partitions_for_table(:foos3).append(:foos3).each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
 
-              expect(indexes.size).to eq(1)
-              expect(indexes.first).to have_attributes(
-                table: table,
-                name: "#{table}_updated_at_idx",
-                columns: ["updated_at"],
-              )
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "#{table}_updated_at_idx",
+                  columns: ["updated_at"],
+                )
+              end
             end
           end
 
@@ -1365,9 +1371,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).once
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/IF NOT EXISTS/).once
-            expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).once
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/IF NOT EXISTS/).once
+              expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+            end
           end
 
           it "creates valid index when table / index name use non-standard characters" do
@@ -1396,19 +1404,23 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).twice
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).once
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).twice
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).once
+            end
 
-            # look up indexes on child tables and parent table
-            ["foos3'", "foos3'_child"].each do |table|
-              indexes = ActiveRecord::Base.connection.indexes(table)
+            aggregate_failures do
+              # look up indexes on child tables and parent table
+              ["foos3'", "foos3'_child"].each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
 
-              expect(indexes.size).to eq(1)
-              expect(indexes.first).to have_attributes(
-                table: table,
-                name: "#{table}_bar\"",
-                columns: ["updated_at"],
-              )
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "#{table}_bar\"",
+                  columns: ["updated_at"],
+                )
+              end
             end
           end
 
@@ -1434,19 +1446,23 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
-            expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+            end
 
-            # look up indexes on child tables and parent table in partman schema
-            partitions_for_table(:foos3, schema: "partman").append("foos3").each do |table|
-              indexes = ActiveRecord::Base.connection.indexes("partman.#{table}")
+            aggregate_failures do
+              # look up indexes on child tables and parent table in partman schema
+              partitions_for_table(:foos3, schema: "partman").append("foos3").each do |table|
+                indexes = ActiveRecord::Base.connection.indexes("partman.#{table}")
 
-              expect(indexes.size).to eq(1)
-              expect(indexes.first).to have_attributes(
-                table: "partman.#{table}",
-                name: "#{table}_bar",
-                columns: ["updated_at"],
-              )
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: "partman.#{table}",
+                  name: "#{table}_bar",
+                  columns: ["updated_at"],
+                )
+              end
             end
           end
 
