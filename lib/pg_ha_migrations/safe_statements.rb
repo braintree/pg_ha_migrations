@@ -213,13 +213,16 @@ module PgHaMigrations::SafeStatements
     child_tables.each do |child_table|
       child_index = "#{child_table}_#{name_suffix}"
 
-      safe_add_concurrent_index(
-        "#{quote_schema_name(schema)}.#{child_table}",
-        columns,
-        name: child_index,
-        if_not_exists: if_not_exists,
-        using: using,
-      )
+      # Rails 6.1 has a bug generating the SQL when concurrently and
+      # if_not_exists are present so we need to do a manual check
+      unless if_not_exists && _index_exists?(schema, child_index)
+        safe_add_concurrent_index(
+          "#{quote_schema_name(schema)}.#{child_table}",
+          columns,
+          name: child_index,
+          using: using,
+        )
+      end
 
       unsafe_execute(<<~SQL)
         ALTER INDEX #{quote_schema_name(schema)}.#{quote_column_name(parent_index)}
@@ -227,16 +230,9 @@ module PgHaMigrations::SafeStatements
       SQL
     end
 
-    is_valid = select_value(<<~SQL)
-      SELECT pg_index.indisvalid
-      FROM pg_index, pg_class, pg_namespace
-      WHERE pg_class.oid = pg_index.indexrelid
-        AND pg_class.relnamespace = pg_namespace.oid
-        AND pg_namespace.nspname = #{quote(schema)}
-        AND pg_class.relname = #{quote(parent_index)}
-    SQL
-
-    raise PgHaMigrations::InvalidMigrationError, "Parent index #{parent_index} is invalid" unless is_valid
+    if !_index_exists?(schema, parent_index, check_validity: true)
+      raise PgHaMigrations::InvalidMigrationError, "Parent index #{parent_index} is invalid"
+    end
   end
 
   def safe_set_maintenance_work_mem_gb(gigabytes)
@@ -500,6 +496,23 @@ module PgHaMigrations::SafeStatements
     raise PgHaMigrations::InvalidMigrationError, "Could not find table #{table}" unless schema.present?
 
     [schema, identifiers.last]
+  end
+
+  def _index_exists?(schema, index, check_validity: false)
+    is_valid = select_value(<<~SQL)
+      SELECT pg_index.indisvalid
+      FROM pg_index, pg_class, pg_namespace
+      WHERE pg_class.oid = pg_index.indexrelid
+        AND pg_class.relnamespace = pg_namespace.oid
+        AND pg_namespace.nspname = #{quote(schema)}
+        AND pg_class.relname = #{quote(index)}
+    SQL
+
+    if check_validity
+      !!is_valid
+    else
+      !is_valid.nil?
+    end
   end
 
   def _partitioned_table?(schema, table)

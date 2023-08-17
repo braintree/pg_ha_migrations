@@ -1408,8 +1408,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).exactly(11).times
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/IF NOT EXISTS/).exactly(11).times
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX/).once
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/IF NOT EXISTS/).once
               expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
             end
           end
