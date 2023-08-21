@@ -64,6 +64,7 @@ require "pg_ha_migrations/allowed_versions"
 require "pg_ha_migrations/railtie"
 require "pg_ha_migrations/hacks/disable_ddl_transaction"
 require "pg_ha_migrations/hacks/cleanup_unnecessary_output"
+require "pg_ha_migrations/hacks/add_index_on_only"
 
 module PgHaMigrations::AutoIncluder
   def inherited(klass)

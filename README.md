@@ -201,17 +201,17 @@ Add an index to a natively partitioned table concurrently, as described in the [
 #   - partitioned_table_column_idx
 #   - child1_column_idx (attached to partitioned_table_column_idx)
 #   - child2_column_idx (attached to partitioned_table_column_idx)
-safe_add_concurrent_partitioned_index :partitioned_table, :column
+safe_add_concurrent_partitioned_index :partitioned_table, :column, name_suffix: "column_idx"
 ```
 
-Add a composite index with custom naming using the `hash` index type.
+Add a composite index using the `hash` index type.
 
 ```ruby
 # Assuming this table has partitions child1 and child2, the following indexes will be created:
-#   - partitioned_table_index_suffix
-#   - child1_index_suffix (attached to partitioned_table_index_suffix)
-#   - child2_index_suffix (attached to partitioned_table_index_suffix)
-safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name_suffix: "index_suffix", using: :hash
+#   - partitioned_table_column1_column2_idx
+#   - child1_column1_column2_idx (attached to partitioned_table_column1_column2_idx)
+#   - child2_column1_column2_idx (attached to partitioned_table_column1_column2_idx)
+safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name_suffix: "column1_column2_idx", using: :hash
 ```
 
 Notes:

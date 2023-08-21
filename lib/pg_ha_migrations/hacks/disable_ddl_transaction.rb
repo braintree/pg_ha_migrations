@@ -12,4 +12,3 @@ module PgHaMigrations
 end
 
 ActiveRecord::Migration.singleton_class.prepend(PgHaMigrations::ActiveRecordHacks::DisableDdlTransaction)
-
