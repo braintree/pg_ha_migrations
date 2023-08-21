@@ -1606,7 +1606,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises error when index invalid" do
-            create_range_partitioned_table(:foos3, migration_klass)
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -1614,18 +1614,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            allow(ActiveRecord::Base.connection).to receive(:execute).and_wrap_original do |meth, query|
-              meth.call(query)
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-              # simulate an invalid index
-              if query =~ /CREATE INDEX/
-                ActiveRecord::Base.connection.execute(<<~SQL)
-                  UPDATE pg_index
-                  SET indisvalid = false
-                  WHERE indexrelid::regclass::text = 'foos3_updated_at_idx'
-                SQL
-              end
-            end
+            # skip the attachment step to simulate invalid index
+            allow(ActiveRecord::Base.connection).to receive(:execute).with(/ATTACH PARTITION/)
 
             expect do
               test_migration.suppress_messages { test_migration.migrate(:up) }
