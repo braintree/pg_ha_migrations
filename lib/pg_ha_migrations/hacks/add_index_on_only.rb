@@ -20,7 +20,7 @@ module PgHaMigrations
             raise PgHaMigrations::InvalidMigrationError, "Found multiple occurrences of \"ON\" in query string for index #{o.index.name.inspect}; cannot safely replace with \"ON ONLY\""
           end
 
-          super.sub(" ON ", " ON ONLY ")
+          original_query.sub(" ON ", " ON ONLY ")
         else
           super
         end
