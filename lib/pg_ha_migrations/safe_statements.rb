@@ -253,7 +253,7 @@ module PgHaMigrations::SafeStatements
       end
     end
 
-    raise PgHaMigrations::InvalidMigrationError, "Parent index #{parent_index.inspect} is invalid" unless _index_valid?(schema, parent_index)
+    raise PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index #{parent_index.inspect} is invalid" unless _index_valid?(schema, parent_index)
   end
 
   def safe_set_maintenance_work_mem_gb(gigabytes)

@@ -1629,7 +1629,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect do
               test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Parent index \"foos3_updated_at_idx\" is invalid")
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index \"foos3_updated_at_idx\" is invalid")
           end
 
           it "raises error when parent index name is too large" do
