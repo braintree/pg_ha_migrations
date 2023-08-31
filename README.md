@@ -209,21 +209,24 @@ Add an index to a natively partitioned table concurrently, as described in the [
 safe_add_concurrent_partitioned_index :partitioned_table, :column
 ```
 
-Add a composite index using the `hash` index type with custom name suffix.
+Add a composite index using the `hash` index type with custom name for the parent index when the parent table contains sub-partitions.
 
 ```ruby
-# Assuming this table has partitions child1 and child2, the following indexes will be created:
+# Assuming this table has partitions child1 and child2, and child1 has sub-partitions sub1 and sub2,
+# the following indexes will be created:
 #   - custom_name_idx
 #   - index_child1_on_column1_column2 (attached to custom_name_idx)
+#   - index_sub1_on_column1_column2 (attached to index_child1_on_column1_column2)
+#   - index_sub2_on_column1_column2 (attached to index_child1_on_column1_column2)
 #   - index_child2_on_column1_column2 (attached to custom_name_idx)
 safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name: "custom_name_idx", using: :hash
 ```
 
-Notes:
+Note:
 
-- This method does not support sub-partitioning.
-- This method runs multiple DDL statements non-transactionally.
-  - Creating or attaching an index on a child table could fail. In such cases an exception will be raised, and an `INVALID` index will be left on the parent table.
+This method runs multiple DDL statements non-transactionally.
+Creating or attaching an index on a child table could fail.
+In such cases an exception will be raised, and an `INVALID` index will be left on the parent table.
 
 #### safe\_add\_unvalidated\_check\_constraint
 

@@ -1372,8 +1372,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              # look up indexes on child tables and parent table
-              partitions_for_table(:foos3).append(:foos3).each do |table|
+              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+
+              expect(tables_with_indexes.size).to eq(11)
+
+              tables_with_indexes.each do |table|
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
                 expected_comment = table == :foos3 ? "this is an index" : nil
@@ -1411,8 +1414,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              # look up indexes on child tables and parent table
-              partitions_for_table(:foos3).append(:foos3).each do |table|
+              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+
+              expect(tables_with_indexes.size).to eq(11)
+
+              tables_with_indexes.each do |table|
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
                 expect(indexes.size).to eq(1)
@@ -1446,8 +1452,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              # look up indexes on child tables and parent table
-              partitions_for_table(:foos3).append(:foos3).each do |table|
+              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+
+              expect(tables_with_indexes.size).to eq(11)
+
+              tables_with_indexes.each do |table|
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
                 expect(indexes.size).to eq(1)
@@ -1482,8 +1491,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              # look up indexes on child tables and parent table
-              partitions_for_table(:foos3).append(:foos3).each do |table|
+              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+
+              expect(tables_with_indexes.size).to eq(11)
+
+              tables_with_indexes.each do |table|
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
                 expect(indexes.size).to eq(1)
@@ -1518,8 +1530,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              # look up indexes on child tables and parent table
-              partitions_for_table(:foos3).append(:foos3).each do |table|
+              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+
+              expect(tables_with_indexes.size).to eq(11)
+
+              tables_with_indexes.each do |table|
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
                 expect(indexes.size).to eq(1)
@@ -1527,6 +1542,98 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   table: table,
                   name: "index_#{table}_on_lower_text_column",
                   columns: "lower(text_column)",
+                  using: :btree,
+                )
+              end
+            end
+          end
+
+          it "creates valid index when sub-partition exists with no child partitions" do
+            create_range_partitioned_table(:foos3, migration_klass)
+            create_range_partitioned_table(:foos3_sub, migration_klass)
+
+            ActiveRecord::Base.connection.execute(<<~SQL)
+              ALTER TABLE foos3
+              ATTACH PARTITION foos3_sub
+              FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
+            SQL
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_sub_on_updated_at" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY/)
+            end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            aggregate_failures do
+              %i[foos3 foos3_sub].each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
+
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "index_#{table}_on_updated_at",
+                  columns: ["updated_at"],
+                  using: :btree,
+                )
+              end
+            end
+          end
+
+          it "creates valid index when multiple child partitions and child sub-partitions exist" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            create_range_partitioned_table(:foos3_sub, migration_klass, with_partman: true)
+
+            ActiveRecord::Base.connection.execute(<<~SQL)
+              ALTER TABLE foos3
+              ATTACH PARTITION foos3_sub
+              FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
+            SQL
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_sub_on_updated_at" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX "public"."index_foos3_sub_on_updated_at"\nATTACH PARTITION/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX "public"."index_foos3_on_updated_at"\nATTACH PARTITION/).exactly(11).times.ordered
+            end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            aggregate_failures do
+              tables_with_indexes = partitions_for_table(:foos3)
+                .concat(partitions_for_table(:foos3_sub))
+                .append(:foos3)
+
+              expect(tables_with_indexes.size).to eq(22)
+
+              tables_with_indexes.each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
+
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "index_#{table}_on_updated_at",
+                  columns: ["updated_at"],
                   using: :btree,
                 )
               end
@@ -1563,9 +1670,16 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
           it "creates valid index when partially created and if_not_exists is true" do
             create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            create_range_partitioned_table(:foos3_sub, migration_klass, with_partman: true)
 
             setup_migration = Class.new(migration_klass) do
               def up
+                unsafe_execute(<<~SQL)
+                  ALTER TABLE foos3
+                  ATTACH PARTITION foos3_sub
+                  FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
+                SQL
+
                 unsafe_add_index :foos3, :updated_at, algorithm: :only
                 unsafe_add_index :foos3_default, :updated_at
 
@@ -1589,7 +1703,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_sub_on_updated_at" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX "public"."index_foos3_sub_on_updated_at"\nATTACH PARTITION/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX "public"."index_foos3_on_updated_at"\nATTACH PARTITION/).exactly(11).times.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1628,7 +1745,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              # look up indexes on child tables and parent table
               ["foos3'", "foos3'_child"].each do |table|
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
@@ -1674,8 +1790,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              # look up indexes on child tables and parent table in partman schema
-              partitions_for_table(:foos3, schema: "partman").append("foos3").each do |table|
+              tables_with_indexes = partitions_for_table(:foos3, schema: "partman").append("foos3")
+
+              expect(tables_with_indexes.size).to eq(11)
+
+              tables_with_indexes.each do |table|
                 indexes = ActiveRecord::Base.connection.indexes("partman.#{table}")
 
                 expect(indexes.size).to eq(1)
@@ -1742,74 +1861,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          it "raises error when table is not partitioned" do
-            setup_migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos3 do |t|
-                  t.timestamps null: false
-                end
-              end
-            end
-
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_concurrent_partitioned_index :foos3, :updated_at
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos3\" is not a partitioned table")
-          end
-
-          it "raises error when sub-partitioning detected" do
-            create_range_partitioned_table(:foos3, migration_klass)
-            create_range_partitioned_table(:foos3_sub, migration_klass)
-
-            setup_migration = Class.new(migration_klass) do
-              def up
-                unsafe_execute(<<~SQL)
-                  ALTER TABLE foos3
-                  ATTACH PARTITION foos3_sub
-                  FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
-                SQL
-              end
-            end
-
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_concurrent_partitioned_index :foos3, :updated_at
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Partitioned table \"foos3\" contains sub-partitions")
-          end
-
-          it "raises error when index invalid" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_concurrent_partitioned_index :foos3, :updated_at
-              end
-            end
-
-            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
-
-            # skip the attachment step to simulate invalid index
-            allow(ActiveRecord::Base.connection).to receive(:execute).with(/ATTACH PARTITION/)
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index \"index_foos3_on_updated_at\" is invalid")
-          end
-
           it "generates index name with hashed identifier when default child index name is too large" do
             create_range_partitioned_table("x" * 42, migration_klass, with_partman: true)
 
@@ -1845,6 +1896,129 @@ RSpec.describe PgHaMigrations::SafeStatements do
               ArgumentError,
               "Index name '#{"x" * 64}' on table 'foos3' is too long; the limit is 63 characters"
             )
+          end
+
+          it "raises error when table is not partitioned" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos3 do |t|
+                  t.timestamps null: false
+                end
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos3\" is not a partitioned table")
+          end
+
+          it "raises error and leaves behind invalid index when child index creation missed" do
+            create_range_partitioned_table(:foos3, migration_klass)
+
+            ActiveRecord::Base.connection.execute(<<~SQL)
+              CREATE TABLE foos3_child1 PARTITION OF foos3
+              FOR VALUES FROM ('2020-01-01') TO ('2020-02-01');
+
+              CREATE TABLE foos3_child2 PARTITION OF foos3
+              FOR VALUES FROM ('2020-02-01') TO ('2020-03-01');
+            SQL
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            allow_any_instance_of(PgHaMigrations::Table).to receive(:partitions)
+              .and_return([PgHaMigrations::Table.new("foos3_child1", "public")])
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index \"index_foos3_on_updated_at\" is invalid")
+
+            aggregate_failures do
+              %i[foos3 foos3_child1].each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
+
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "index_#{table}_on_updated_at",
+                  columns: ["updated_at"],
+                  using: :btree,
+                )
+              end
+
+              expect(ActiveRecord::Base.connection.indexes(:foos3_child2)).to be_empty
+
+              expect(ActiveRecord::Base.pluck_from_sql("SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid")).to contain_exactly(
+                "index_foos3_on_updated_at",
+              )
+            end
+          end
+
+          it "raises error and leaves behind invalid index when child sub-partition index creation missed" do
+            create_range_partitioned_table(:foos3, migration_klass)
+            create_range_partitioned_table(:foos3_sub, migration_klass)
+
+            ActiveRecord::Base.connection.execute(<<~SQL)
+              ALTER TABLE foos3
+              ATTACH PARTITION foos3_sub
+              FOR VALUES FROM ('2020-01-01') TO ('2021-01-01');
+
+              CREATE TABLE foos3_sub_child1 PARTITION OF foos3_sub
+              FOR VALUES FROM ('2020-01-01') TO ('2020-02-01');
+
+              CREATE TABLE foos3_sub_child2 PARTITION OF foos3_sub
+              FOR VALUES FROM ('2020-02-01') TO ('2020-03-01');
+            SQL
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
+              end
+            end
+
+            allow_any_instance_of(PgHaMigrations::Table).to receive(:partitions).and_wrap_original do |meth|
+              if meth.receiver.name == "foos3_sub"
+                [PgHaMigrations::Table.new("foos3_sub_child1", "public")]
+              else
+                meth.call
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index \"index_foos3_sub_on_updated_at\" is invalid")
+
+            aggregate_failures do
+              %i[foos3 foos3_sub foos3_sub_child1].each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
+
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "index_#{table}_on_updated_at",
+                  columns: ["updated_at"],
+                  using: :btree,
+                )
+              end
+
+              expect(ActiveRecord::Base.connection.indexes(:foos3_sub_child2)).to be_empty
+
+              expect(ActiveRecord::Base.pluck_from_sql("SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid")).to contain_exactly(
+                "index_foos3_on_updated_at",
+                "index_foos3_sub_on_updated_at",
+              )
+            end
           end
 
           it "raises error when on < Postgres 11" do
