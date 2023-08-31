@@ -2,6 +2,7 @@ require "pg_ha_migrations/version"
 require "rails"
 require "active_record"
 require "active_record/migration"
+require "active_record/connection_adapters/postgresql/utils"
 require "relation_to_struct"
 require "ruby2_keywords"
 

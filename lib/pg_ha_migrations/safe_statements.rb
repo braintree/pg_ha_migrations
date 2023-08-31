@@ -185,34 +185,35 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11"
     end
 
-    schema, parent_table = _schema_and_table_for(table)
+    parent_schema, parent_table = _schema_and_table_for(table)
 
-    fully_qualified_parent_table = "#{quote_schema_name(schema)}.#{parent_table}"
+    fully_qualified_parent_table = "#{quote_schema_name(parent_schema)}.#{parent_table}"
     parent_index = "#{parent_table}_#{name_suffix}"
 
-    raise PgHaMigrations::InvalidMigrationError, "Table #{parent_table.inspect} is not a partitioned table" unless _partitioned_table?(schema, parent_table)
+    raise PgHaMigrations::InvalidMigrationError, "Table #{parent_table.inspect} is not a partitioned table" unless _partitioned_table?(parent_schema, parent_table)
 
     _validate_index_name!(parent_index)
 
-    child_tables = select_values(<<~SQL)
-      SELECT child.relname
+    child_schemas_and_tables = select_rows(<<~SQL)
+      SELECT child_ns.nspname, child.relname
       FROM pg_inherits
-        JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-        JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
-        JOIN pg_namespace    ON parent.relnamespace = pg_namespace.oid
+        JOIN pg_class parent        ON pg_inherits.inhparent = parent.oid
+        JOIN pg_class child         ON pg_inherits.inhrelid  = child.oid
+        JOIN pg_namespace parent_ns ON parent.relnamespace = parent_ns.oid
+        JOIN pg_namespace child_ns  ON child.relnamespace = child_ns.oid
       WHERE parent.relname = #{quote(parent_table)}
-        AND pg_namespace.nspname = #{quote(schema)}
+        AND parent_ns.nspname = #{quote(parent_schema)}
     SQL
 
-    child_tables_with_index_names = child_tables.map do |child_table|
-      raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{parent_table.inspect} contains sub-partitions" if _partitioned_table?(schema, child_table)
+    child_tables_with_metadata = child_schemas_and_tables.map do |child_schema, child_table|
+      raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{parent_table.inspect} contains sub-partitions" if _partitioned_table?(child_schema, child_table)
 
       child_index = "#{child_table}_#{name_suffix}"
 
       _validate_index_name!(child_index)
 
-      [child_table, child_index]
-    end.to_h
+      [child_schema, child_table, child_index]
+    end
 
     # TODO: take out ShareLock after issue #39 is implemented
     safely_acquire_lock_for_table(fully_qualified_parent_table) do
@@ -227,10 +228,10 @@ module PgHaMigrations::SafeStatements
       )
     end
 
-    child_tables_with_index_names.each do |child_table, child_index|
+    child_tables_with_metadata.each do |child_schema, child_table, child_index|
       # CREATE INDEX CONCURRENTLY ON child_table
       safe_add_concurrent_index(
-        "#{quote_schema_name(schema)}.#{child_table}",
+        "#{quote_schema_name(child_schema)}.#{child_table}",
         columns,
         name: child_index,
         if_not_exists: if_not_exists,
@@ -240,20 +241,20 @@ module PgHaMigrations::SafeStatements
 
     # avoid taking out an unnecessary lock when there are
     # no child tables or the index is already valid
-    if child_tables.present? && !_index_valid?(schema, parent_index)
+    if child_tables_with_metadata.present? && !_index_valid?(parent_schema, parent_index)
       safely_acquire_lock_for_table(fully_qualified_parent_table) do
-        child_tables_with_index_names.each do |child_table, child_index|
+        child_tables_with_metadata.each do |child_schema, _, child_index|
           say_with_time "Attaching index #{child_index.inspect} to #{parent_index.inspect}" do
             connection.execute(<<~SQL)
-              ALTER INDEX #{quote_schema_name(schema)}.#{quote_column_name(parent_index)}
-              ATTACH PARTITION #{quote_schema_name(schema)}.#{quote_column_name(child_index)}
+              ALTER INDEX #{quote_schema_name(parent_schema)}.#{quote_column_name(parent_index)}
+              ATTACH PARTITION #{quote_schema_name(child_schema)}.#{quote_column_name(child_index)}
             SQL
           end
         end
       end
     end
 
-    raise PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index #{parent_index.inspect} is invalid" unless _index_valid?(schema, parent_index)
+    raise PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index #{parent_index.inspect} is invalid" unless _index_valid?(parent_schema, parent_index)
   end
 
   def safe_set_maintenance_work_mem_gb(gigabytes)
@@ -496,12 +497,10 @@ module PgHaMigrations::SafeStatements
   end
 
   def _schema_and_table_for(table)
-    identifiers = table.to_s.split(".")
+    pg_name = ActiveRecord::ConnectionAdapters::PostgreSQL::Utils.extract_schema_qualified_name(table.to_s)
 
-    raise PgHaMigrations::InvalidMigrationError, "Expected table to be in the format <table> or <schema>.<table> but received #{table}" if identifiers.size > 2
-
-    schema_conditional = if identifiers.size > 1
-      "#{quote(identifiers.first)}"
+    schema_conditional = if pg_name.schema
+      "#{quote(pg_name.schema)}"
     else
       "ANY (current_schemas(false))"
     end
@@ -509,14 +508,14 @@ module PgHaMigrations::SafeStatements
     schema = connection.select_value(<<~SQL)
       SELECT schemaname
       FROM pg_tables
-      WHERE tablename = #{quote(identifiers.last)} AND schemaname = #{schema_conditional}
+      WHERE tablename = #{quote(pg_name.identifier)} AND schemaname = #{schema_conditional}
       ORDER BY array_position(current_schemas(false), schemaname)
       LIMIT 1
     SQL
 
     raise PgHaMigrations::InvalidMigrationError, "Could not find table #{table}" unless schema.present?
 
-    [schema, identifiers.last]
+    [schema, pg_name.identifier]
   end
 
   def _index_valid?(schema, index)

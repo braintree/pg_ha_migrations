@@ -1544,6 +1544,59 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
+          it "creates valid index when child table exists in different schema" do
+            create_range_partitioned_table(:foos3, migration_klass)
+
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute(<<~SQL)
+                  CREATE TABLE partman.foos3_child PARTITION OF foos3
+                  FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
+                SQL
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, name_suffix: "updated_at_idx"
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY/).once
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).once
+            end
+
+            aggregate_failures do
+              child_indexes = ActiveRecord::Base.connection.indexes("partman.foos3_child")
+
+              expect(child_indexes.size).to eq(1)
+              expect(child_indexes.first).to have_attributes(
+                table: "partman.foos3_child",
+                name: "foos3_child_updated_at_idx",
+                columns: ["updated_at"],
+                using: :btree,
+              )
+
+              parent_indexes = ActiveRecord::Base.connection.indexes(:foos3)
+
+              expect(parent_indexes.size).to eq(1)
+              expect(parent_indexes.first).to have_attributes(
+                table: :foos3,
+                name: "foos3_updated_at_idx",
+                columns: ["updated_at"],
+                using: :btree,
+              )
+            end
+          end
+
           it "raises error when name_suffix is not present" do
             test_migration = Class.new(migration_klass) do
               def up
@@ -2828,18 +2881,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
               end.to raise_error(PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores")
-            end
-
-            it "raises error when fully qualified table name has multiple periods" do
-              migration = Class.new(migration_klass) do
-                def up
-                  unsafe_partman_create_parent "foo.bar.foos3", partition_key: :created_at, interval: "monthly"
-                end
-              end
-
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Expected table to be in the format <table> or <schema>.<table> but received foo.bar.foos3")
             end
 
             it "raises error when invalid type used for start partition" do
