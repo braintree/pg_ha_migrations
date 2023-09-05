@@ -1319,12 +1319,16 @@ RSpec.describe PgHaMigrations::SafeStatements do
             )
           end
 
-          it "creates valid index when multiple child partitions exist" do
+          it "creates valid index with comment when multiple child partitions exist" do
             create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
-                safe_add_concurrent_partitioned_index :foos3, :updated_at, name_suffix: "updated_at_idx"
+                safe_add_concurrent_partitioned_index \
+                  :foos3,
+                  :updated_at,
+                  name_suffix: "updated_at_idx",
+                  comment: "this is an index"
               end
             end
 
@@ -1343,12 +1347,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
               partitions_for_table(:foos3).append(:foos3).each do |table|
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
+                expected_comment = table == :foos3 ? "this is an index" : nil
+
                 expect(indexes.size).to eq(1)
                 expect(indexes.first).to have_attributes(
                   table: table,
                   name: "#{table}_updated_at_idx",
                   columns: ["updated_at"],
                   using: :btree,
+                  comment: expected_comment,
                 )
               end
             end
@@ -1384,6 +1391,86 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   name: "#{table}_updated_at_idx",
                   columns: ["updated_at"],
                   using: :hash,
+                )
+              end
+            end
+          end
+
+          it "creates valid unique index when multiple child partitions exist" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index \
+                  :foos3,
+                  [:created_at, :updated_at],
+                  name_suffix: "unique_idx",
+                  unique: true
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE UNIQUE INDEX "foos3_unique_idx" ON ONLY/).once
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE UNIQUE INDEX CONCURRENTLY/).exactly(10).times
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+            end
+
+            aggregate_failures do
+              # look up indexes on child tables and parent table
+              partitions_for_table(:foos3).append(:foos3).each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
+
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "#{table}_unique_idx",
+                  columns: ["created_at", "updated_at"],
+                  unique: true,
+                  using: :btree,
+                )
+              end
+            end
+          end
+
+          it "creates valid partial index when multiple child partitions exist" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index \
+                  :foos3,
+                  :updated_at,
+                  name_suffix: "partial_idx",
+                  where: "text_column IS NOT NULL"
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_partial_idx" ON ONLY/).once
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times
+              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+            end
+
+            aggregate_failures do
+              # look up indexes on child tables and parent table
+              partitions_for_table(:foos3).append(:foos3).each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
+
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "#{table}_partial_idx",
+                  columns: ["updated_at"],
+                  where: "(text_column IS NOT NULL)",
+                  using: :btree,
                 )
               end
             end

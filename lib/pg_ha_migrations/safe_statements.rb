@@ -175,10 +175,16 @@ module PgHaMigrations::SafeStatements
     unsafe_remove_index(table, **options.merge(:algorithm => :concurrently))
   end
 
-  # TODO: figure out what options we actually want to allow
-  #
-  # we definitely don't want algorithm and unique
-  def safe_add_concurrent_partitioned_index(table, columns, name_suffix:, if_not_exists: false, using: nil)
+  def safe_add_concurrent_partitioned_index(
+    table,
+    columns,
+    name_suffix:,
+    if_not_exists: nil,
+    using: nil,
+    unique: nil,
+    where: nil,
+    comment: nil
+  )
     raise ArgumentError, "Expected <name_suffix> to be present" unless name_suffix.present?
 
     if ActiveRecord::Base.connection.postgresql_version < 11_00_00
@@ -224,6 +230,9 @@ module PgHaMigrations::SafeStatements
         name: parent_index,
         if_not_exists: if_not_exists,
         using: using,
+        unique: unique,
+        where: where,
+        comment: comment,
         algorithm: :only, # see lib/pg_ha_migrations/hacks/add_index_on_only.rb
       )
     end
@@ -236,6 +245,8 @@ module PgHaMigrations::SafeStatements
         name: child_index,
         if_not_exists: if_not_exists,
         using: using,
+        unique: unique,
+        where: where,
       )
     end
 
