@@ -84,7 +84,7 @@ RSpec.describe PgHaMigrations::BlockingDatabaseTransactionsReporter do
         expect(PgHaMigrations::BlockingDatabaseTransactionsReporter).to receive(:_puts) do |message|
           expect(message).to match(/Potentially blocking transactions/)
           database = "pg_ha_migrations_test"
-          expect(message).to match(/Primary database:\n\s+#{database} \| tables \(foos1, foos2\).*pg_sleep/m)
+          expect(message).to match(/Primary database:\n\s+#{database} \| tables \("public"\."foos1", "public"\."foos2"\).*pg_sleep/m)
         end
 
         PgHaMigrations::BlockingDatabaseTransactionsReporter.run

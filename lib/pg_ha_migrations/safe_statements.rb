@@ -202,18 +202,7 @@ module PgHaMigrations::SafeStatements
     # Short-circuit when if_not_exists: true and index already valid
     return if if_not_exists && _index_valid?(parent_schema, parent_index)
 
-    child_schemas_and_tables = connection.select_rows(<<~SQL)
-      SELECT child_ns.nspname, child.relname
-      FROM pg_inherits
-        JOIN pg_class parent        ON pg_inherits.inhparent = parent.oid
-        JOIN pg_class child         ON pg_inherits.inhrelid  = child.oid
-        JOIN pg_namespace parent_ns ON parent.relnamespace = parent_ns.oid
-        JOIN pg_namespace child_ns  ON child.relnamespace = child_ns.oid
-      WHERE parent.relname = #{connection.quote(parent_table)}
-        AND parent_ns.nspname = #{connection.quote(parent_schema)}
-    SQL
-
-    child_tables_with_metadata = child_schemas_and_tables.map do |child_schema, child_table|
+    child_tables_with_metadata = _partitions_for_table(parent_schema, parent_table).map do |child_schema, child_table|
       raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{parent_table.inspect} contains sub-partitions" if _partitioned_table?(child_schema, child_table)
 
       child_index = connection.index_name(child_table, columns)
@@ -554,6 +543,31 @@ module PgHaMigrations::SafeStatements
     SQL
   end
 
+  def _partitions_for_table(schema, table, include_sub_partitions: false)
+    schemas_and_tables = connection.select_rows(<<~SQL)
+      SELECT child_ns.nspname, child.relname
+      FROM pg_inherits
+        JOIN pg_class parent        ON pg_inherits.inhparent = parent.oid
+        JOIN pg_class child         ON pg_inherits.inhrelid  = child.oid
+        JOIN pg_namespace parent_ns ON parent.relnamespace = parent_ns.oid
+        JOIN pg_namespace child_ns  ON child.relnamespace = child_ns.oid
+      WHERE parent.relname = #{connection.quote(table)}
+        AND parent_ns.nspname = #{connection.quote(schema)}
+    SQL
+
+    if include_sub_partitions
+      sub_partitions = schemas_and_tables.each_with_object([]) do |(child_schema, child_table), arr|
+        if _partitioned_table?(child_schema, child_table)
+          arr.concat(_partitions_for_table(child_schema, child_table, include_sub_partitions: true))
+        end
+      end
+
+      schemas_and_tables.concat(sub_partitions)
+    end
+
+    schemas_and_tables
+  end
+
   def _per_migration_caller
     @_per_migration_caller ||= Kernel.caller
   end
@@ -582,16 +596,38 @@ module PgHaMigrations::SafeStatements
   end
 
   def safely_acquire_lock_for_table(table, &block)
+    nested_lock = Thread.current[__method__].present?
+
     _check_postgres_adapter!
-    table = table.to_s
-    quoted_table_name = connection.quote_table_name(table)
+
+    schema, table = _schema_and_table_for(table)
+    fully_qualified_table = "#{connection.quote_schema_name(schema)}.#{connection.quote_table_name(table)}"
+
+    # Disallow nested locks unless targeting the same table
+    if nested_lock && Thread.current[__method__] != fully_qualified_table
+      raise PgHaMigrations::InvalidMigrationError, "Nested lock detected! Cannot acquire lock on #{fully_qualified_table} while #{Thread.current[__method__]} is locked."
+    else
+      Thread.current[__method__] = fully_qualified_table
+    end
+
+    target_schemas_and_tables = [[schema, table]]
+
+    # Locking a partitioned table will also lock child tables (including sub-partitions),
+    # so we need to check for blocking queries on those tables as well
+    if _partitioned_table?(schema, table)
+      target_schemas_and_tables.concat(_partitions_for_table(schema, table, include_sub_partitions: true))
+    end
 
     successfully_acquired_lock = false
 
     until successfully_acquired_lock
       while (
         blocking_transactions = PgHaMigrations::BlockingDatabaseTransactions.find_blocking_transactions("#{PgHaMigrations::LOCK_TIMEOUT_SECONDS} seconds")
-        blocking_transactions.any? { |query| query.tables_with_locks.include?(table) }
+        blocking_transactions.any? do |query|
+          query.tables_with_locks.any? do |identifiers|
+            target_schemas_and_tables.include?(identifiers)
+          end
+        end
       )
         say "Waiting on blocking transactions:"
         blocking_transactions.each do |blocking_transaction|
@@ -604,13 +640,13 @@ module PgHaMigrations::SafeStatements
         adjust_timeout_method = connection.postgresql_version >= 9_03_00 ? :adjust_lock_timeout : :adjust_statement_timeout
         begin
           method(adjust_timeout_method).call(PgHaMigrations::LOCK_TIMEOUT_SECONDS) do
-            connection.execute("LOCK #{quoted_table_name};")
+            connection.execute("LOCK #{fully_qualified_table};")
           end
           successfully_acquired_lock = true
         rescue ActiveRecord::StatementInvalid => e
           if e.message =~ /PG::LockNotAvailable.+ lock timeout/ || e.message =~ /PG::QueryCanceled.+ statement timeout/
             sleep_seconds = PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS
-            say "Timed out trying to acquire an exclusive lock on the #{quoted_table_name} table."
+            say "Timed out trying to acquire an exclusive lock on the #{fully_qualified_table} table."
             say "Sleeping for #{sleep_seconds}s to allow potentially queued up queries to finish before continuing."
             sleep(sleep_seconds)
 
@@ -625,6 +661,8 @@ module PgHaMigrations::SafeStatements
         end
       end
     end
+  ensure
+    Thread.current[__method__] = nil unless nested_lock
   end
 
   def adjust_lock_timeout(timeout_seconds = PgHaMigrations::LOCK_TIMEOUT_SECONDS, &block)
