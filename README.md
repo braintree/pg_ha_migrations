@@ -432,6 +432,11 @@ safely_acquire_lock_for_table(:table) do
 end
 ```
 
+Note:
+
+We enforce that only one table (or a table and its partitions) can be locked at a time.
+Attempting to acquire a nested lock on a different table will result in an error.
+
 #### adjust\_lock\_timeout
 
 Adjust lock timeout.

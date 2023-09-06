@@ -3,13 +3,21 @@ require "spec_helper"
 RSpec.describe PgHaMigrations::SafeStatements do
   TableLock = Struct.new(:table, :lock_type, :granted)
   def locks_for_table(table, connection:)
+    identifiers = table.to_s.split(".")
+
+    identifiers.prepend("public") if identifiers.size == 1
+
+    schema, table = identifiers
+
     values = connection.execute(<<-SQL)
       SELECT pg_class.relname AS table, pg_locks.mode AS lock_type, granted
       FROM pg_locks
       JOIN pg_class ON pg_locks.relation = pg_class.oid
+      JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
       WHERE pid IS DISTINCT FROM pg_backend_pid()
-        AND pg_class.relkind = 'r'
+        AND pg_class.relkind IN ('r', 'p')
         AND pg_class.relname = '#{table}'
+        AND pg_namespace.nspname = '#{schema}'
     SQL
     values.to_a.map do |hash|
       TableLock.new(hash["table"], hash["lock_type"], hash["granted"])
@@ -3417,8 +3425,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        ["bogus_table", :bogus_table].each do |table_name|
-          describe "#safely_acquire_lock_for_table with table_name of type #{table_name.class.name}" do
+        ["bogus_table", :bogus_table, "public.bogus_table"].each do |table_name|
+          describe "#safely_acquire_lock_for_table #{table_name} of type #{table_name.class.name}" do
             let(:alternate_connection_pool) do
               ActiveRecord::ConnectionAdapters::ConnectionPool.new(pool_config)
             end
@@ -3428,7 +3436,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
             let(:migration) { Class.new(migration_klass).new }
 
             before(:each) do
-              ActiveRecord::Base.connection.execute("CREATE TABLE #{table_name}(pk SERIAL, i INTEGER)")
+              ActiveRecord::Base.connection.execute(<<~SQL)
+                CREATE TABLE #{table_name}(pk SERIAL, i INTEGER);
+                CREATE SCHEMA partman;
+                CREATE EXTENSION pg_partman SCHEMA partman;
+              SQL
             end
 
             after(:each) do
@@ -3443,7 +3455,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             it "acquires an exclusive lock on the table" do
               migration.safely_acquire_lock_for_table(table_name) do
-                expect(locks_for_table(table_name, connection: alternate_connection)).to eq([TableLock.new(table_name.to_s, "AccessExclusiveLock", true)])
+                expect(locks_for_table(table_name, connection: alternate_connection)).to eq([TableLock.new("bogus_table", "AccessExclusiveLock", true)])
               end
             end
 
@@ -3466,7 +3478,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
                 block_call_count += 1
                 if block_call_count < 3
-                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "", 5, "active", [table_name.to_s])]
+                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "", 5, "active", [["public", "bogus_table"]])]
                 else
                   []
                 end
@@ -3476,6 +3488,95 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 migration.safely_acquire_lock_for_table(table_name) do
                   expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
                 end
+              end
+            end
+
+            it "does not wait to acquire a lock if same table in different schema is blocked" do
+              stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+
+              ActiveRecord::Base.connection.execute("CREATE TABLE partman.bogus_table(pk SERIAL, i INTEGER)")
+
+              begin
+                thread = Thread.new do
+                  migration.safely_acquire_lock_for_table("partman.bogus_table") { sleep 2 }
+                end
+
+                sleep 1.1
+
+                expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
+                  .once
+                  .and_call_original
+
+                migration.suppress_messages do
+                  migration.safely_acquire_lock_for_table(table_name) do
+                    expect(locks_for_table("partman.bogus_table", connection: alternate_connection)).not_to be_empty
+                    expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+                  end
+                end
+              ensure
+                thread.join
+              end
+            end
+
+            it "waits to acquire a lock if the table is partitioned and child table is blocked" do
+              stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+
+              ActiveRecord::Base.connection.drop_table(table_name)
+              create_range_partitioned_table(table_name, migration_klass, with_partman: true)
+
+              begin
+                thread = Thread.new do
+                  migration.safely_acquire_lock_for_table(:bogus_table_default) { sleep 3 }
+                end
+
+                sleep 1.1
+
+                expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
+                  .at_least(3)
+                  .times
+                  .and_call_original
+
+                migration.suppress_messages do
+                  migration.safely_acquire_lock_for_table(table_name) do
+                    expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+                  end
+                end
+              ensure
+                thread.join
+              end
+            end
+
+            it "waits to acquire a lock if the table is partitioned and child sub-partition is blocked" do
+              stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+
+              ActiveRecord::Base.connection.drop_table(table_name)
+              create_range_partitioned_table(table_name, migration_klass)
+              create_range_partitioned_table("#{table_name}_sub", migration_klass, with_partman: true)
+              ActiveRecord::Base.connection.execute(<<~SQL)
+                ALTER TABLE bogus_table
+                ATTACH PARTITION bogus_table_sub
+                FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
+              SQL
+
+              begin
+                thread = Thread.new do
+                  migration.safely_acquire_lock_for_table(:bogus_table_sub_default) { sleep 3 }
+                end
+
+                sleep 1.1
+
+                expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
+                  .at_least(3)
+                  .times
+                  .and_call_original
+
+                migration.suppress_messages do
+                  migration.safely_acquire_lock_for_table(table_name) do
+                    expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+                  end
+                end
+              ensure
+                thread.join
               end
             end
 
@@ -3490,7 +3591,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               time_before_lock_calls = Time.now
 
               allow(ActiveRecord::Base.connection).to receive(:execute).at_least(:once).and_call_original
-              expect(ActiveRecord::Base.connection).to receive(:execute).with("LOCK \"#{table_name}\";").exactly(2).times.and_wrap_original do |m, *args|
+              expect(ActiveRecord::Base.connection).to receive(:execute).with("LOCK \"public\".\"bogus_table\";").exactly(2).times.and_wrap_original do |m, *args|
                 lock_call_count += 1
 
                 if lock_call_count == 2
@@ -3528,7 +3629,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.safely_acquire_lock_for_table(table_name) { }
-              end.to output(/Timed out trying to acquire an exclusive lock.+#{table_name}/m).to_stdout
+              end.to output(/Timed out trying to acquire an exclusive lock.+"public"\."bogus_table"/m).to_stdout
             end
 
             it "doesn't kill a long running query inside of the lock" do
@@ -3550,7 +3651,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions).exactly(2).times do |*args|
                 blocking_queries_calls += 1
                 if blocking_queries_calls == 1
-                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "some_sql_query", "active", 5, [table_name.to_s])]
+                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "some_sql_query", "active", 5, [["public", "bogus_table"]])]
                 else
                   []
                 end
@@ -3558,8 +3659,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration = Class.new(migration_klass) do
+                  class_attribute :table_name, instance_accessor: true
+
+                  self.table_name = table_name
+
                   def up
-                    safely_acquire_lock_for_table("bogus_table") { }
+                    safely_acquire_lock_for_table(table_name) { }
                   end
                 end
 
@@ -3574,6 +3679,32 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
                 expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
               end
+              expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+            end
+
+            it "raises error when attempting nested lock on different table" do
+              ActiveRecord::Base.connection.execute("CREATE TABLE foo(pk SERIAL, i INTEGER)")
+
+              expect do
+                migration.safely_acquire_lock_for_table(table_name) do
+                  expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+
+                  # attempting a nested lock twice to ensure the
+                  # thread variable doesn't incorrectly get reset
+                  expect do
+                    migration.safely_acquire_lock_for_table("foo")
+                  end.to raise_error(
+                    PgHaMigrations::InvalidMigrationError,
+                    "Nested lock detected! Cannot acquire lock on \"public\".\"foo\" while \"public\".\"bogus_table\" is locked."
+                  )
+
+                  migration.safely_acquire_lock_for_table("foo")
+                end
+              end.to raise_error(
+                PgHaMigrations::InvalidMigrationError,
+                "Nested lock detected! Cannot acquire lock on \"public\".\"foo\" while \"public\".\"bogus_table\" is locked."
+              )
+
               expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
             end
 
