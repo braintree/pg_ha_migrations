@@ -3725,7 +3725,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.safely_acquire_lock_for_table(table_name) { }
-              end.to output(/Timed out trying to acquire an exclusive lock.+"public"\."bogus_table"/m).to_stdout
+              end.to output(/Timed out trying to acquire ACCESS EXCLUSIVE lock.+"public"\."bogus_table"/m).to_stdout
             end
 
             it "doesn't kill a long running query inside of the lock" do

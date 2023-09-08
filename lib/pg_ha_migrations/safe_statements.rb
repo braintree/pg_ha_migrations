@@ -574,7 +574,7 @@ module PgHaMigrations::SafeStatements
         rescue ActiveRecord::StatementInvalid => e
           if e.message =~ /PG::LockNotAvailable.+ lock timeout/ || e.message =~ /PG::QueryCanceled.+ statement timeout/
             sleep_seconds = PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS
-            say "Timed out trying to acquire an exclusive lock on the #{table.fully_qualified_name} table."
+            say "Timed out trying to acquire #{lock_mode.to_sql} lock on the #{table.fully_qualified_name} table."
             say "Sleeping for #{sleep_seconds}s to allow potentially queued up queries to finish before continuing."
             sleep(sleep_seconds)
 
