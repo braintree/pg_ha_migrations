@@ -3454,7 +3454,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end.to yield_control
             end
 
-            it "acquires an exclusive lock on the table" do
+            it "acquires an exclusive lock on the table by default" do
               migration.safely_acquire_lock_for_table(table_name) do
                 expect(locks_for_table(table_name, connection: alternate_connection)).to match([
                   having_attributes(
@@ -3465,6 +3465,21 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   )
                 ])
               end
+            end
+
+            it "acquires a lock in a different mode when provided" do
+              migration.safely_acquire_lock_for_table(table_name, mode: :share) do
+                expect(locks_for_table(table_name, connection: alternate_connection)).to eq([TableLock.new("bogus_table", "ShareLock", true)])
+              end
+            end
+
+            it "raises error when invalid lock mode provided" do
+              expect do
+                migration.safely_acquire_lock_for_table(table_name, mode: :garbage) {}
+              end.to raise_error(
+                ArgumentError,
+                "Unrecognized lock mode :garbage. Valid modes: [:access_share, :row_share, :row_exclusive, :share_update_exclusive, :share, :share_row_exclusive, :exclusive, :access_exclusive]"
+              )
             end
 
             it "releases the lock (even after an exception)" do
@@ -3672,7 +3687,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               time_before_lock_calls = Time.now
 
               allow(ActiveRecord::Base.connection).to receive(:execute).at_least(:once).and_call_original
-              expect(ActiveRecord::Base.connection).to receive(:execute).with("LOCK \"public\".\"bogus_table\";").exactly(2).times.and_wrap_original do |m, *args|
+              expect(ActiveRecord::Base.connection).to receive(:execute).with("LOCK \"public\".\"bogus_table\" IN ACCESS EXCLUSIVE MODE;").exactly(2).times.and_wrap_original do |m, *args|
                 lock_call_count += 1
 
                 if lock_call_count == 2
@@ -3760,6 +3775,30 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
                 expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
               end
+              expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+            end
+
+            it "does not allow re-entrancy when lock escalation detected" do
+              expect do
+                migration.safely_acquire_lock_for_table(table_name, mode: :share) do
+                  expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+
+                  # attempting a nested lock twice to ensure the
+                  # thread variable doesn't incorrectly get reset
+                  expect do
+                    migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) {}
+                  end.to raise_error(
+                    PgHaMigrations::InvalidMigrationError,
+                    "Lock escalation detected! Cannot change lock level from :share to :exclusive for \"public\".\"bogus_table\"."
+                  )
+
+                  migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) {}
+                end
+              end.to raise_error(
+                PgHaMigrations::InvalidMigrationError,
+                "Lock escalation detected! Cannot change lock level from :share to :exclusive for \"public\".\"bogus_table\"."
+              )
+
               expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
             end
 

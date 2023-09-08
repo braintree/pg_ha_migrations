@@ -519,18 +519,25 @@ module PgHaMigrations::SafeStatements
     super(conn, direction)
   end
 
-  def safely_acquire_lock_for_table(table, &block)
+  def safely_acquire_lock_for_table(table, mode: :access_exclusive, &block)
     nested_lock = Thread.current[__method__]
 
     _check_postgres_adapter!
 
     table = PgHaMigrations::Table.from_table_name(table)
+    lock_mode = PgHaMigrations::LockMode.new(mode)
 
-    # Disallow nested locks unless targeting the same table
-    if nested_lock && nested_lock != table
-      raise PgHaMigrations::InvalidMigrationError, "Nested lock detected! Cannot acquire lock on #{table.fully_qualified_name} while #{nested_lock.fully_qualified_name} is locked."
+    if nested_lock
+      if nested_lock[:table] != table
+        raise PgHaMigrations::InvalidMigrationError, "Nested lock detected! Cannot acquire lock on #{table.fully_qualified_name} while #{nested_lock[:table].fully_qualified_name} is locked."
+      elsif nested_lock[:mode] < lock_mode
+        raise PgHaMigrations::InvalidMigrationError, "Lock escalation detected! Cannot change lock level from #{nested_lock[:mode].inspect} to #{lock_mode.inspect} for #{table.fully_qualified_name}."
+      end
     else
-      Thread.current[__method__] = table
+      Thread.current[__method__] = {
+        table: table,
+        mode: lock_mode,
+      }
     end
 
     target_tables = [table]
@@ -561,7 +568,7 @@ module PgHaMigrations::SafeStatements
         adjust_timeout_method = connection.postgresql_version >= 9_03_00 ? :adjust_lock_timeout : :adjust_statement_timeout
         begin
           method(adjust_timeout_method).call(PgHaMigrations::LOCK_TIMEOUT_SECONDS) do
-            connection.execute("LOCK #{table.fully_qualified_name};")
+            connection.execute("LOCK #{table.fully_qualified_name} IN #{lock_mode.to_sql} MODE;")
           end
           successfully_acquired_lock = true
         rescue ActiveRecord::StatementInvalid => e
