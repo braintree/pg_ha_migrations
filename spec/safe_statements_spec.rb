@@ -3469,7 +3469,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             it "acquires a lock in a different mode when provided" do
               migration.safely_acquire_lock_for_table(table_name, mode: :share) do
-                expect(locks_for_table(table_name, connection: alternate_connection)).to eq([TableLock.new("bogus_table", "ShareLock", true)])
+                expect(locks_for_table(table_name, connection: alternate_connection)).to match([
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "ShareLock",
+                    granted: true,
+                    pid: kind_of(Integer),
+                  )
+                ])
               end
             end
 

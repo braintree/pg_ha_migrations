@@ -2,35 +2,36 @@ module PgHaMigrations
   class LockMode
     include Comparable
 
-    MODES = ActiveSupport::OrderedHash.new
-
-    MODES[:access_share] = "ACCESS SHARE"
-    MODES[:row_share] = "ROW SHARE"
-    MODES[:row_exclusive] = "ROW EXCLUSIVE"
-    MODES[:share_update_exclusive] = "SHARE UPDATE EXCLUSIVE"
-    MODES[:share] = "SHARE"
-    MODES[:share_row_exclusive] = "SHARE ROW EXCLUSIVE"
-    MODES[:exclusive] = "EXCLUSIVE"
-    MODES[:access_exclusive] = "ACCESS EXCLUSIVE"
+    MODES = %i[
+      access_share
+      row_share
+      row_exclusive
+      share_update_exclusive
+      share
+      share_row_exclusive
+      exclusive
+      access_exclusive
+    ]
 
     attr_reader :mode
+
+    delegate :inspect, :to_s, to: :mode
 
     def initialize(mode)
       @mode = mode.to_sym
 
-      raise ArgumentError, "Unrecognized lock mode #{@mode.inspect}. Valid modes: #{MODES.keys}" unless MODES.has_key?(@mode)
-    end
-
-    def inspect
-      mode.inspect
+      raise ArgumentError, "Unrecognized lock mode #{@mode.inspect}. Valid modes: #{MODES}" unless MODES.include?(@mode)
     end
 
     def to_sql
-      MODES[mode]
+      to_s
+        .upcase
+        .split("_")
+        .join(" ")
     end
 
     def <=>(other)
-      MODES.keys.index(mode) <=> MODES.keys.index(other.mode)
+      MODES.index(mode) <=> MODES.index(other.mode)
     end
   end
 end

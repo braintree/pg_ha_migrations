@@ -106,16 +106,16 @@ RSpec.describe PgHaMigrations::LockMode do
         subject = described_class.new(mode)
 
         aggregate_failures do
-          expect(subject == described_class.new(mode)).to eq(true)
+          expect(subject).to eq(described_class.new(mode))
 
           other_modes[:above].each do |other_mode|
-            expect(subject > described_class.new(other_mode)).to eq(false)
-            expect(subject < described_class.new(other_mode)).to eq(true)
+            expect(subject).to be < described_class.new(other_mode),
+              "lock mode #{mode} is not less than #{other_mode}"
           end
 
           other_modes[:below].each do |other_mode|
-            expect(subject > described_class.new(other_mode)).to eq(true)
-            expect(subject < described_class.new(other_mode)).to eq(false)
+            expect(subject).to be > described_class.new(other_mode),
+              "lock mode #{mode} is not greater than #{other_mode}"
           end
         end
       end
