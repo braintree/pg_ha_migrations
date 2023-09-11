@@ -1300,13 +1300,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/CREATE INDEX CONCURRENTLY/)
-              expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY/)
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX/)
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             indexes = ActiveRecord::Base.connection.indexes(:foos3)
 
@@ -1334,13 +1334,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
               # look up indexes on child tables and parent table
@@ -1372,13 +1372,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
               # look up indexes on child tables and parent table
@@ -1411,13 +1411,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE UNIQUE INDEX "foos3_unique_idx" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE UNIQUE INDEX CONCURRENTLY/).exactly(10).times
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE UNIQUE INDEX "foos3_unique_idx" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE UNIQUE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
               # look up indexes on child tables and parent table
@@ -1451,13 +1451,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_partial_idx" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_partial_idx" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
               # look up indexes on child tables and parent table
@@ -1487,13 +1487,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_lower_text_column_idx" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_lower_text_column_idx" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
               # look up indexes on child tables and parent table
@@ -1530,13 +1530,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX IF NOT EXISTS "foos3_updated_at_idx" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times
-              expect(ActiveRecord::Base.connection).to_not have_received(:execute).with(/ALTER INDEX/)
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX IF NOT EXISTS "foos3_updated_at_idx" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX/)
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
           end
 
           it "creates valid index when table / index name use non-standard characters" do
@@ -1563,13 +1563,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3'_bar""" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY "foos3'_child_bar""" ON/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).once
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3'_bar""" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "foos3'_child_bar""" ON/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).once.ordered
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
               # look up indexes on child tables and parent table
@@ -1607,13 +1607,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_bar" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).exactly(10).times
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_bar" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
               # look up indexes on child tables and parent table in partman schema
@@ -1653,13 +1653,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/CREATE INDEX CONCURRENTLY/).once
-              expect(ActiveRecord::Base.connection).to have_received(:execute).with(/ALTER INDEX/).once
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).once.ordered
             end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
               child_indexes = ActiveRecord::Base.connection.indexes("partman.foos3_child")
