@@ -76,6 +76,11 @@ The following functionality is currently unsupported:
 - Generators
 - schema.rb
 
+Compatibility notes:
+
+- While some features may work with older versions, this gem is currently tested against PostgreSQL 11+
+- There is a [bug](https://github.com/rails/rails/pull/41490) in early versions of Rails 6.1 when using `algorithm: :concurrently`. To add / remove indexes concurrently, please upgrade to at least Rails 6.1.4.
+
 #### safe\_create\_table
 
 Safely creates a new table.

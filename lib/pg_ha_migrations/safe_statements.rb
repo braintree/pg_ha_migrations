@@ -155,10 +155,6 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  # In early versions of Rails 6.0 (fixed in 6.1.4), there is a bug in the SQL
-  # generation when if_not exists is present: https://github.com/rails/rails/pull/41490
-  #
-  # Should we backport a fix in our hacks, raise an error, or do nothing?
   def safe_add_concurrent_index(table, columns, options={})
     unsafe_add_index(table, columns, **options.merge(:algorithm => :concurrently))
   end
