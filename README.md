@@ -222,7 +222,7 @@ safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], 
 Notes:
 
 - this method does not support sub-partitioning
-- this method runs multiple DDL statements non-transactionally
+- This method runs multiple DDL statements non-transactionally.
   - creating / attaching an index on a child table could fail, resulting in an error and an invalid index on the parent table
 
 #### safe\_add\_unvalidated\_check\_constraint
