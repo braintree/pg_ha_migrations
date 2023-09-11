@@ -1811,20 +1811,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
               test_migration.suppress_messages { test_migration.migrate(:up) }
             end.to raise_error(PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11")
           end
-
-          it "raises error when identifier contains 'ON'" do
-            create_range_partitioned_table("weird ON table", migration_klass)
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_concurrent_partitioned_index "weird ON table", :updated_at, name_suffix: "bar"
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Found multiple occurrences of \"ON\" in query string for index \"weird ON table_bar\"; cannot safely replace with \"ON ONLY\"")
-          end
         end
 
         describe  "unsafe_add_index" do

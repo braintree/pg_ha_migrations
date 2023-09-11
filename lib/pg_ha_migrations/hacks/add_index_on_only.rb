@@ -14,13 +14,10 @@ module PgHaMigrations
         if o.algorithm == "ONLY"
           o.algorithm = nil
 
-          original_query = super
+          quoted_index = quote_column_name(o.index.name)
+          quoted_table = quote_table_name(o.index.table)
 
-          if original_query.gsub(" ON ").count > 1
-            raise PgHaMigrations::InvalidMigrationError, "Found multiple occurrences of \"ON\" in query string for index #{o.index.name.inspect}; cannot safely replace with \"ON ONLY\""
-          end
-
-          original_query.sub(" ON ", " ON ONLY ")
+          super.sub("#{quoted_index} ON #{quoted_table}", "#{quoted_index} ON ONLY #{quoted_table}")
         else
           super
         end
