@@ -38,11 +38,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
   def create_range_partitioned_table(table, migration_klass, with_template: false, with_partman: false)
     migration = Class.new(migration_klass) do
-      class_attribute \
-        :table,
-        :with_template,
-        :with_partman,
-        instance_accessor: true
+      class_attribute :table, :with_template, :with_partman, instance_accessor: true
 
       self.table = table
       self.with_template = with_template
@@ -1303,7 +1299,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY/)
-              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX/)
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/)
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1337,7 +1333,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1375,7 +1371,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1414,7 +1410,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE UNIQUE INDEX "foos3_unique_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE UNIQUE INDEX CONCURRENTLY/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1454,7 +1450,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_partial_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1490,7 +1486,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_lower_text_column_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1533,7 +1529,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX IF NOT EXISTS "foos3_updated_at_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX/)
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/)
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1566,7 +1562,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3'_bar""" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "foos3'_child_bar""" ON/).once.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1610,7 +1606,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_bar" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
@@ -1656,7 +1652,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_updated_at_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).once.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
