@@ -195,7 +195,7 @@ safe_remove_concurrent_index :table, :name => :index_name
 
 #### safe\_add\_concurrent\_partitioned\_index
 
-Add an index to a natively partitioned table concurrently, as described in the [table partitioning docs](https://www.postgresql.org/docs/current/ddl-partitioning.html).
+Add an index to a natively partitioned table concurrently, as described in the [table partitioning docs](https://www.postgresql.org/docs/current/ddl-partitioning.html):
 
 > To avoid long lock times, it is possible to use `CREATE INDEX ON ONLY` the partitioned table; such an index is marked invalid, and the partitions do not get the index applied automatically.
 > The indexes on partitions can be created individually using `CONCURRENTLY`, and then attached to the index on the parent using `ALTER INDEX .. ATTACH PARTITION`.
