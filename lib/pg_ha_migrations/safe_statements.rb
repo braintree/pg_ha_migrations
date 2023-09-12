@@ -1,5 +1,4 @@
 module PgHaMigrations::SafeStatements
-  MAX_INDEX_NAME_SIZE = 63 # bytes
   PARTITION_TYPES = %i[range list hash]
 
   PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
@@ -174,14 +173,13 @@ module PgHaMigrations::SafeStatements
   def safe_add_concurrent_partitioned_index(
     table,
     columns,
-    name_suffix:,
+    name_suffix: nil,
     if_not_exists: nil,
     using: nil,
     unique: nil,
     where: nil,
     comment: nil
   )
-    raise ArgumentError, "Expected <name_suffix> to be present" unless name_suffix.present?
 
     if ActiveRecord::Base.connection.postgresql_version < 11_00_00
       raise PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11"
@@ -189,12 +187,17 @@ module PgHaMigrations::SafeStatements
 
     parent_schema, parent_table = _schema_and_table_for(table)
 
-    fully_qualified_parent_table = "#{connection.quote_schema_name(parent_schema)}.#{parent_table}"
-    parent_index = "#{parent_table}_#{name_suffix}"
-
     raise PgHaMigrations::InvalidMigrationError, "Table #{parent_table.inspect} is not a partitioned table" unless _partitioned_table?(parent_schema, parent_table)
 
-    _validate_index_name!(parent_index)
+    fully_qualified_parent_table = "#{connection.quote_schema_name(parent_schema)}.#{parent_table}"
+
+    parent_index = if name_suffix.present?
+      "index_#{parent_table}_#{name_suffix}"
+    else
+      connection.index_name(parent_table, columns)
+    end
+
+    connection.send(:validate_index_length!, parent_table, parent_index)
 
     child_schemas_and_tables = connection.select_rows(<<~SQL)
       SELECT child_ns.nspname, child.relname
@@ -210,9 +213,13 @@ module PgHaMigrations::SafeStatements
     child_tables_with_metadata = child_schemas_and_tables.map do |child_schema, child_table|
       raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{parent_table.inspect} contains sub-partitions" if _partitioned_table?(child_schema, child_table)
 
-      child_index = "#{child_table}_#{name_suffix}"
+      child_index = if name_suffix.present?
+        "index_#{child_table}_#{name_suffix}"
+      else
+        connection.index_name(child_table, columns)
+      end
 
-      _validate_index_name!(child_index)
+      connection.send(:validate_index_length!, child_table, child_index)
 
       [child_schema, child_table, child_index]
     end
@@ -547,12 +554,6 @@ module PgHaMigrations::SafeStatements
           AND pg_namespace.nspname = #{connection.quote(schema)}
       )
     SQL
-  end
-
-  def _validate_index_name!(name)
-    if name.to_s.bytesize > MAX_INDEX_NAME_SIZE
-      raise PgHaMigrations::InvalidMigrationError, "Index name #{name.inspect} is larger than #{MAX_INDEX_NAME_SIZE} bytes"
-    end
   end
 
   def _per_migration_caller

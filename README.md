@@ -203,20 +203,20 @@ Add an index to a natively partitioned table concurrently, as described in the [
 
 ```ruby
 # Assuming this table has partitions child1 and child2, the following indexes will be created:
-#   - partitioned_table_column_idx
-#   - child1_column_idx (attached to partitioned_table_column_idx)
-#   - child2_column_idx (attached to partitioned_table_column_idx)
-safe_add_concurrent_partitioned_index :partitioned_table, :column, name_suffix: "column_idx"
+#   - index_partitioned_table_on_column
+#   - index_child1_on_column (attached to index_partitioned_table_on_column)
+#   - index_child2_on_column (attached to index_partitioned_table_on_column)
+safe_add_concurrent_partitioned_index :partitioned_table, :column
 ```
 
-Add a composite index using the `hash` index type.
+Add a composite index using the `hash` index type with custom name suffix.
 
 ```ruby
 # Assuming this table has partitions child1 and child2, the following indexes will be created:
-#   - partitioned_table_column1_column2_idx
-#   - child1_column1_column2_idx (attached to partitioned_table_column1_column2_idx)
-#   - child2_column1_column2_idx (attached to partitioned_table_column1_column2_idx)
-safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name_suffix: "column1_column2_idx", using: :hash
+#   - index_partitioned_table_custom_name
+#   - index_child1_custom_name (attached to index_partitioned_table_custom_name)
+#   - index_child2_custom_name (attached to index_partitioned_table_custom_name)
+safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name_suffix: "custom_name", using: :hash
 ```
 
 Notes:
