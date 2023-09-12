@@ -213,10 +213,10 @@ Add a composite index using the `hash` index type with custom name suffix.
 
 ```ruby
 # Assuming this table has partitions child1 and child2, the following indexes will be created:
-#   - index_partitioned_table_custom_name
-#   - index_child1_custom_name (attached to index_partitioned_table_custom_name)
-#   - index_child2_custom_name (attached to index_partitioned_table_custom_name)
-safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name_suffix: "custom_name", using: :hash
+#   - custom_name_idx
+#   - index_child1_on_column1_column2 (attached to custom_name_idx)
+#   - index_child2_on_column1_column2 (attached to custom_name_idx)
+safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name: "custom_name_idx", using: :hash
 ```
 
 Notes:

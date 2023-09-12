@@ -173,7 +173,7 @@ module PgHaMigrations::SafeStatements
   def safe_add_concurrent_partitioned_index(
     table,
     columns,
-    name_suffix: nil,
+    name: nil,
     if_not_exists: nil,
     using: nil,
     unique: nil,
@@ -191,8 +191,8 @@ module PgHaMigrations::SafeStatements
 
     fully_qualified_parent_table = "#{connection.quote_schema_name(parent_schema)}.#{parent_table}"
 
-    parent_index = if name_suffix.present?
-      "index_#{parent_table}_#{name_suffix}"
+    parent_index = if name.present?
+      name
     else
       connection.index_name(parent_table, columns)
     end
@@ -216,11 +216,7 @@ module PgHaMigrations::SafeStatements
     child_tables_with_metadata = child_schemas_and_tables.map do |child_schema, child_table|
       raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{parent_table.inspect} contains sub-partitions" if _partitioned_table?(child_schema, child_table)
 
-      child_index = if name_suffix.present?
-        "index_#{child_table}_#{name_suffix}"
-      else
-        connection.index_name(child_table, columns)
-      end
+      child_index = connection.index_name(child_table, columns)
 
       connection.send(:validate_index_length!, child_table, child_index)
 

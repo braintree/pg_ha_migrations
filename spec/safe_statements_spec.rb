@@ -1320,14 +1320,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration = Class.new(migration_klass) do
               def up
-                safe_add_concurrent_partitioned_index :foos3, :updated_at, comment: "this is an index", name_suffix: "bar"
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, comment: "this is an index", name: "foos3_idx"
               end
             end
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_bar" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
@@ -1340,11 +1340,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
                 expected_comment = table == :foos3 ? "this is an index" : nil
+                expected_name = table == :foos3 ? "foos3_idx" : "index_#{table}_on_updated_at"
 
                 expect(indexes.size).to eq(1)
                 expect(indexes.first).to have_attributes(
                   table: table,
-                  name: "index_#{table}_bar",
+                  name: expected_name,
                   columns: ["updated_at"],
                   using: :btree,
                   comment: expected_comment,
@@ -1575,15 +1576,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration = Class.new(migration_klass) do
               def up
-                safe_add_concurrent_partitioned_index "foos3'", :updated_at, name_suffix: "bar\""
+                safe_add_concurrent_partitioned_index "foos3'", :updated_at, name: "foos3'_bar\"_idx"
               end
             end
 
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3'_bar""" ON ONLY/).once.ordered
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "index_foos3'_child_bar""" ON/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3'_bar""_idx" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "index_foos3'_child_on_updated_at" ON/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
             end
 
@@ -1594,10 +1595,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
               ["foos3'", "foos3'_child"].each do |table|
                 indexes = ActiveRecord::Base.connection.indexes(table)
 
+                expected_name = table == "foos3'" ? "foos3'_bar\"_idx" : "index_#{table}_on_updated_at"
+
                 expect(indexes.size).to eq(1)
                 expect(indexes.first).to have_attributes(
                   table: table,
-                  name: "index_#{table}_bar\"",
+                  name: expected_name,
                   columns: ["updated_at"],
                   using: :btree,
                 )
@@ -1775,7 +1778,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration = Class.new(migration_klass) do
               def up
-                safe_add_concurrent_partitioned_index :foos3, :updated_at, name_suffix: "x" * 52
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, name: "x" * 64
               end
             end
 
@@ -1783,16 +1786,16 @@ RSpec.describe PgHaMigrations::SafeStatements do
               test_migration.suppress_messages { test_migration.migrate(:up) }
             end.to raise_error(
               ArgumentError,
-              "Index name 'index_foos3_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' on table 'foos3' is too long; the limit is 63 characters"
+              "Index name '#{"x" * 64}' on table 'foos3' is too long; the limit is 63 characters"
             )
           end
 
           it "raises error when child index name is too large" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            create_range_partitioned_table("x" * 43, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
-                safe_add_concurrent_partitioned_index :foos3, :updated_at, name_suffix: "x" * 51
+                safe_add_concurrent_partitioned_index "x" * 43, :updated_at
               end
             end
 
@@ -1800,7 +1803,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               test_migration.suppress_messages { test_migration.migrate(:up) }
             end.to raise_error(
               ArgumentError,
-              /Index name 'index_foos3_.+_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' on table 'foos3_.+' is too long; the limit is 63 characters/
+              /Index name 'index_#{"x" * 43}_.+_on_updated_at' on table '#{"x" * 43}_.+' is too long; the limit is 63 characters/
             )
           end
 
@@ -1809,7 +1812,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             test_migration = Class.new(migration_klass) do
               def up
-                safe_add_concurrent_partitioned_index :foos3, :updated_at, name_suffix: "updated_at_idx"
+                safe_add_concurrent_partitioned_index :foos3, :updated_at
               end
             end
 
