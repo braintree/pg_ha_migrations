@@ -223,7 +223,7 @@ Notes:
 
 - This method does not support sub-partitioning.
 - This method runs multiple DDL statements non-transactionally.
-  - creating / attaching an index on a child table could fail, resulting in an error and an invalid index on the parent table
+  - Creating or attaching an index on a child table could fail. In such cases an exception will be raised, and an `INVALID` index will be left on the parent table.
 
 #### safe\_add\_unvalidated\_check\_constraint
 
