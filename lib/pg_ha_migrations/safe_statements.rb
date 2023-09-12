@@ -199,6 +199,9 @@ module PgHaMigrations::SafeStatements
 
     connection.send(:validate_index_length!, parent_table, parent_index)
 
+    # Short-circuit when if_not_exists: true and index already valid
+    return if if_not_exists && _index_valid?(parent_schema, parent_index)
+
     child_schemas_and_tables = connection.select_rows(<<~SQL)
       SELECT child_ns.nspname, child.relname
       FROM pg_inherits
@@ -253,9 +256,8 @@ module PgHaMigrations::SafeStatements
       )
     end
 
-    # Avoid taking out an unnecessary lock when there are
-    # no child tables or the index is already valid
-    if child_tables_with_metadata.present? && !_index_valid?(parent_schema, parent_index)
+    # Avoid taking out an unnecessary lock if there are no child tables to attach
+    if child_tables_with_metadata.present?
       safely_acquire_lock_for_table(fully_qualified_parent_table) do
         child_tables_with_metadata.each do |child_schema, _, child_index|
           say_with_time "Attaching index #{child_index.inspect} to #{parent_index.inspect}" do

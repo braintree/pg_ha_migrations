@@ -1495,7 +1495,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          it "does not error when index exists and if_not_exists is true" do
+          it "short-circuits when index already valid and if_not_exists is true" do
             create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             setup_migration = Class.new(migration_klass) do
@@ -1515,9 +1515,43 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_on_updated_at" ON ONLY/)
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/)
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/)
+            end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+          end
+
+          it "creates valid index when partially created and if_not_exists is true" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_index :foos3, :updated_at, algorithm: :only
+                unsafe_add_index :foos3_default, :updated_at
+
+                unsafe_execute(<<~SQL)
+                  ALTER INDEX index_foos3_on_updated_at
+                  ATTACH PARTITION index_foos3_default_on_updated_at
+                SQL
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, if_not_exists: true
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            aggregate_failures do
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times.ordered
-              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/)
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
             test_migration.suppress_messages { test_migration.migrate(:up) }
