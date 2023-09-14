@@ -76,6 +76,11 @@ The following functionality is currently unsupported:
 - Generators
 - schema.rb
 
+Compatibility notes:
+
+- While some features may work with older versions, this gem is currently tested against PostgreSQL 11+
+- There is a [bug](https://github.com/rails/rails/pull/41490) in early versions of Rails 6.1 when using `algorithm: :concurrently`. To add / remove indexes concurrently, please upgrade to at least Rails 6.1.4.
+
 #### safe\_create\_table
 
 Safely creates a new table.
@@ -187,6 +192,38 @@ Safely remove an index. Migrations that contain this statement must also include
 ```ruby
 safe_remove_concurrent_index :table, :name => :index_name
 ```
+
+#### safe\_add\_concurrent\_partitioned\_index
+
+Add an index to a natively partitioned table concurrently, as described in the [table partitioning docs](https://www.postgresql.org/docs/current/ddl-partitioning.html):
+
+> To avoid long lock times, it is possible to use `CREATE INDEX ON ONLY` the partitioned table; such an index is marked invalid, and the partitions do not get the index applied automatically.
+> The indexes on partitions can be created individually using `CONCURRENTLY`, and then attached to the index on the parent using `ALTER INDEX .. ATTACH PARTITION`.
+> Once indexes for all partitions are attached to the parent index, the parent index is marked valid automatically.
+
+```ruby
+# Assuming this table has partitions child1 and child2, the following indexes will be created:
+#   - index_partitioned_table_on_column
+#   - index_child1_on_column (attached to index_partitioned_table_on_column)
+#   - index_child2_on_column (attached to index_partitioned_table_on_column)
+safe_add_concurrent_partitioned_index :partitioned_table, :column
+```
+
+Add a composite index using the `hash` index type with custom name suffix.
+
+```ruby
+# Assuming this table has partitions child1 and child2, the following indexes will be created:
+#   - custom_name_idx
+#   - index_child1_on_column1_column2 (attached to custom_name_idx)
+#   - index_child2_on_column1_column2 (attached to custom_name_idx)
+safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name: "custom_name_idx", using: :hash
+```
+
+Notes:
+
+- This method does not support sub-partitioning.
+- This method runs multiple DDL statements non-transactionally.
+  - Creating or attaching an index on a child table could fail. In such cases an exception will be raised, and an `INVALID` index will be left on the parent table.
 
 #### safe\_add\_unvalidated\_check\_constraint
 

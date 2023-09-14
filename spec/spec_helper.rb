@@ -66,13 +66,8 @@ module DatabaseHelper
       DROP SCHEMA IF EXISTS partman CASCADE;
     SQL
 
-    # Drop parent partition tables first to automatically drop children
-    ActiveRecord::Base.connection.select_values("SELECT c.relname FROM pg_class c JOIN pg_partitioned_table p on c.oid = p.partrelid").each do |table|
-      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
-    end
-
     ActiveRecord::Base.connection.tables.each do |table|
-      ActiveRecord::Base.connection.execute("DROP TABLE #{table} CASCADE")
+      ActiveRecord::Base.connection.execute("DROP TABLE IF EXISTS #{ActiveRecord::Base.connection.quote_table_name(table)} CASCADE")
     end
 
     ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type WHERE typtype = 'e'").each do |enum|
