@@ -185,40 +185,32 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11"
     end
 
-    parent_schema, parent_table = _schema_and_table_for(table)
+    parent_table = PgHaMigrations::Table.from_table_name(table)
 
-    raise PgHaMigrations::InvalidMigrationError, "Table #{parent_table.inspect} is not a partitioned table" unless _partitioned_table?(parent_schema, parent_table)
-
-    fully_qualified_parent_table = "#{connection.quote_schema_name(parent_schema)}.#{parent_table}"
+    raise PgHaMigrations::InvalidMigrationError, "Table #{parent_table.inspect} is not a partitioned table" unless parent_table.natively_partitioned?
 
     parent_index = if name.present?
-      name
+      PgHaMigrations::Index.new(name, parent_table)
     else
-      connection.index_name(parent_table, columns)
+      PgHaMigrations::Index.from_table_and_columns(parent_table, columns)
     end
 
-    connection.send(:validate_index_length!, parent_table, parent_index)
-
     # Short-circuit when if_not_exists: true and index already valid
-    return if if_not_exists && _index_valid?(parent_schema, parent_index)
+    return if if_not_exists && parent_index.valid?
 
-    child_tables_with_metadata = _partitions_for_table(parent_schema, parent_table).map do |child_schema, child_table|
-      raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{parent_table.inspect} contains sub-partitions" if _partitioned_table?(child_schema, child_table)
+    child_indexes = parent_table.partitions.map do |child_table|
+      raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{parent_table.inspect} contains sub-partitions" if child_table.natively_partitioned?
 
-      child_index = connection.index_name(child_table, columns)
-
-      connection.send(:validate_index_length!, child_table, child_index)
-
-      [child_schema, child_table, child_index]
+      PgHaMigrations::Index.from_table_and_columns(child_table, columns)
     end
 
     # TODO: take out ShareLock after issue #39 is implemented
-    safely_acquire_lock_for_table(fully_qualified_parent_table) do
+    safely_acquire_lock_for_table(parent_table.fully_qualified_name) do
       # CREATE INDEX ON ONLY parent_table
       unsafe_add_index(
-        fully_qualified_parent_table,
+        parent_table.fully_qualified_name,
         columns,
-        name: parent_index,
+        name: parent_index.name,
         if_not_exists: if_not_exists,
         using: using,
         unique: unique,
@@ -228,12 +220,12 @@ module PgHaMigrations::SafeStatements
       )
     end
 
-    child_tables_with_metadata.each do |child_schema, child_table, child_index|
+    child_indexes.each do |child_index|
       # CREATE INDEX CONCURRENTLY ON child_table
       safe_add_concurrent_index(
-        "#{connection.quote_schema_name(child_schema)}.#{child_table}",
+        child_index.table.fully_qualified_name,
         columns,
-        name: child_index,
+        name: child_index.name,
         if_not_exists: if_not_exists,
         using: using,
         unique: unique,
@@ -242,20 +234,20 @@ module PgHaMigrations::SafeStatements
     end
 
     # Avoid taking out an unnecessary lock if there are no child tables to attach
-    if child_tables_with_metadata.present?
-      safely_acquire_lock_for_table(fully_qualified_parent_table) do
-        child_tables_with_metadata.each do |child_schema, _, child_index|
+    if child_indexes.present?
+      safely_acquire_lock_for_table(parent_table.fully_qualified_name) do
+        child_indexes.each do |child_index|
           say_with_time "Attaching index #{child_index.inspect} to #{parent_index.inspect}" do
             connection.execute(<<~SQL)
-              ALTER INDEX #{connection.quote_schema_name(parent_schema)}.#{connection.quote_column_name(parent_index)}
-              ATTACH PARTITION #{connection.quote_schema_name(child_schema)}.#{connection.quote_column_name(child_index)}
+              ALTER INDEX #{parent_index.fully_qualified_name}
+              ATTACH PARTITION #{child_index.fully_qualified_name}
             SQL
           end
         end
       end
     end
 
-    raise PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index #{parent_index.inspect} is invalid" unless _index_valid?(parent_schema, parent_index)
+    raise PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index #{parent_index.inspect} is invalid" unless parent_index.valid?
   end
 
   def safe_set_maintenance_work_mem_gb(gigabytes)
@@ -439,7 +431,7 @@ module PgHaMigrations::SafeStatements
       retention_keep_table: retention_keep_table,
     }.compact
 
-    unsafe_partman_update_config(create_parent_options[:parent_table], **update_config_options)
+    unsafe_partman_update_config(table, **update_config_options)
   end
 
   def safe_partman_update_config(table, **options)
@@ -490,83 +482,15 @@ module PgHaMigrations::SafeStatements
   end
 
   def _fully_qualified_table_name_for_partman(table)
-    _schema_and_table_for(table).each do |identifier|
+    table = PgHaMigrations::Table.from_table_name(table)
+
+    [table.schema, table.name].each do |identifier|
       if identifier.to_s !~ /^[a-z_][a-z_\d]*$/
         raise PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores"
       end
     end.join(".")
   end
 
-  def _schema_and_table_for(table)
-    pg_name = ActiveRecord::ConnectionAdapters::PostgreSQL::Utils.extract_schema_qualified_name(table.to_s)
-
-    schema_conditional = if pg_name.schema
-      "#{connection.quote(pg_name.schema)}"
-    else
-      "ANY (current_schemas(false))"
-    end
-
-    schema = connection.select_value(<<~SQL)
-      SELECT schemaname
-      FROM pg_tables
-      WHERE tablename = #{connection.quote(pg_name.identifier)} AND schemaname = #{schema_conditional}
-      ORDER BY array_position(current_schemas(false), schemaname)
-      LIMIT 1
-    SQL
-
-    raise PgHaMigrations::InvalidMigrationError, "Could not find table #{table}" unless schema.present?
-
-    [schema, pg_name.identifier]
-  end
-
-  def _index_valid?(schema, index)
-    connection.select_value(<<~SQL)
-      SELECT pg_index.indisvalid
-      FROM pg_index, pg_class, pg_namespace
-      WHERE pg_class.oid = pg_index.indexrelid
-        AND pg_class.relnamespace = pg_namespace.oid
-        AND pg_namespace.nspname = #{connection.quote(schema)}
-        AND pg_class.relname = #{connection.quote(index)}
-    SQL
-  end
-
-  def _partitioned_table?(schema, table)
-    connection.select_value(<<~SQL)
-      SELECT EXISTS (
-        SELECT 1
-        FROM pg_partitioned_table, pg_class, pg_namespace
-        WHERE pg_class.oid = pg_partitioned_table.partrelid
-          AND pg_class.relnamespace = pg_namespace.oid
-          AND pg_class.relname = #{connection.quote(table)}
-          AND pg_namespace.nspname = #{connection.quote(schema)}
-      )
-    SQL
-  end
-
-  def _partitions_for_table(schema, table, include_sub_partitions: false)
-    schemas_and_tables = connection.select_rows(<<~SQL)
-      SELECT child_ns.nspname, child.relname
-      FROM pg_inherits
-        JOIN pg_class parent        ON pg_inherits.inhparent = parent.oid
-        JOIN pg_class child         ON pg_inherits.inhrelid  = child.oid
-        JOIN pg_namespace parent_ns ON parent.relnamespace = parent_ns.oid
-        JOIN pg_namespace child_ns  ON child.relnamespace = child_ns.oid
-      WHERE parent.relname = #{connection.quote(table)}
-        AND parent_ns.nspname = #{connection.quote(schema)}
-    SQL
-
-    if include_sub_partitions
-      sub_partitions = schemas_and_tables.each_with_object([]) do |(child_schema, child_table), arr|
-        if _partitioned_table?(child_schema, child_table)
-          arr.concat(_partitions_for_table(child_schema, child_table, include_sub_partitions: true))
-        end
-      end
-
-      schemas_and_tables.concat(sub_partitions)
-    end
-
-    schemas_and_tables
-  end
 
   def _per_migration_caller
     @_per_migration_caller ||= Kernel.caller
@@ -596,27 +520,24 @@ module PgHaMigrations::SafeStatements
   end
 
   def safely_acquire_lock_for_table(table, &block)
-    nested_lock = Thread.current[__method__].present?
+    nested_lock = Thread.current[__method__]
 
     _check_postgres_adapter!
 
-    schema, table = _schema_and_table_for(table)
-    fully_qualified_table = "#{connection.quote_schema_name(schema)}.#{connection.quote_table_name(table)}"
+    table = PgHaMigrations::Table.from_table_name(table)
 
     # Disallow nested locks unless targeting the same table
-    if nested_lock && Thread.current[__method__] != fully_qualified_table
-      raise PgHaMigrations::InvalidMigrationError, "Nested lock detected! Cannot acquire lock on #{fully_qualified_table} while #{Thread.current[__method__]} is locked."
+    if nested_lock && nested_lock != table
+      raise PgHaMigrations::InvalidMigrationError, "Nested lock detected! Cannot acquire lock on #{table.fully_qualified_name} while #{nested_lock.fully_qualified_name} is locked."
     else
-      Thread.current[__method__] = fully_qualified_table
+      Thread.current[__method__] = table
     end
 
-    target_schemas_and_tables = [[schema, table]]
+    target_tables = [table]
 
     # Locking a partitioned table will also lock child tables (including sub-partitions),
     # so we need to check for blocking queries on those tables as well
-    if _partitioned_table?(schema, table)
-      target_schemas_and_tables.concat(_partitions_for_table(schema, table, include_sub_partitions: true))
-    end
+    target_tables.concat(table.partitions(include_sub_partitions: true))
 
     successfully_acquired_lock = false
 
@@ -624,8 +545,8 @@ module PgHaMigrations::SafeStatements
       while (
         blocking_transactions = PgHaMigrations::BlockingDatabaseTransactions.find_blocking_transactions("#{PgHaMigrations::LOCK_TIMEOUT_SECONDS} seconds")
         blocking_transactions.any? do |query|
-          query.tables_with_locks.any? do |identifiers|
-            target_schemas_and_tables.include?(identifiers)
+          query.tables_with_locks.any? do |table|
+            target_tables.include?(table)
           end
         end
       )
@@ -640,13 +561,13 @@ module PgHaMigrations::SafeStatements
         adjust_timeout_method = connection.postgresql_version >= 9_03_00 ? :adjust_lock_timeout : :adjust_statement_timeout
         begin
           method(adjust_timeout_method).call(PgHaMigrations::LOCK_TIMEOUT_SECONDS) do
-            connection.execute("LOCK #{fully_qualified_table};")
+            connection.execute("LOCK #{table.fully_qualified_name};")
           end
           successfully_acquired_lock = true
         rescue ActiveRecord::StatementInvalid => e
           if e.message =~ /PG::LockNotAvailable.+ lock timeout/ || e.message =~ /PG::QueryCanceled.+ statement timeout/
             sleep_seconds = PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS
-            say "Timed out trying to acquire an exclusive lock on the #{fully_qualified_table} table."
+            say "Timed out trying to acquire an exclusive lock on the #{table.fully_qualified_name} table."
             say "Sleeping for #{sleep_seconds}s to allow potentially queued up queries to finish before continuing."
             sleep(sleep_seconds)
 

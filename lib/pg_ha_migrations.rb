@@ -53,8 +53,13 @@ module PgHaMigrations
 
   # This gem only supports the PostgreSQL adapter at this time.
   UnsupportedAdapter = Class.new(StandardError)
+
+  # Some methods need to inspect the attributes of a table. In such cases,
+  # this error will be raised if the table does not exist
+  UndefinedTableError = Class.new(StandardError)
 end
 
+require "pg_ha_migrations/relation"
 require "pg_ha_migrations/blocking_database_transactions"
 require "pg_ha_migrations/blocking_database_transactions_reporter"
 require "pg_ha_migrations/partman_config"
