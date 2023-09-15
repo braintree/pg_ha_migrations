@@ -1,7 +1,7 @@
 require "spec_helper"
 
 RSpec.describe PgHaMigrations::SafeStatements do
-  TableLock = Struct.new(:table, :lock_type, :granted)
+  TableLock = Struct.new(:table, :lock_type, :granted, :pid)
   def locks_for_table(table, connection:)
     identifiers = table.to_s.split(".")
 
@@ -9,19 +9,16 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
     schema, table = identifiers
 
-    values = connection.execute(<<-SQL)
-      SELECT pg_class.relname AS table, pg_locks.mode AS lock_type, granted
+    connection.structs_from_sql(TableLock, <<-SQL)
+      SELECT pg_class.relname AS table, pg_locks.mode AS lock_type, granted, pid
       FROM pg_locks
       JOIN pg_class ON pg_locks.relation = pg_class.oid
       JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
       WHERE pid IS DISTINCT FROM pg_backend_pid()
-        AND pg_class.relkind IN ('r', 'p')
+        AND pg_class.relkind IN ('r', 'p') -- 'r' is a standard table; 'p' is a partition parent
         AND pg_class.relname = '#{table}'
         AND pg_namespace.nspname = '#{schema}'
     SQL
-    values.to_a.map do |hash|
-      TableLock.new(hash["table"], hash["lock_type"], hash["granted"])
-    end
   end
 
   def partitions_for_table(table, schema: "public")
@@ -2884,7 +2881,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table foos3")
+              end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"foos3\" does not exist in search path")
             end
 
             it "raises error when parent table does not exist and fully qualified name provided" do
@@ -2896,7 +2893,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table public.foos3")
+              end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"public\".\"foos3\" does not exist")
             end
 
             it "raises error when template table does not exist" do
@@ -2910,7 +2907,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table foos3_template")
+              end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"foos3_template\" does not exist in search path")
             end
 
             it "raises error when template table does not exist and fully qualified name provided" do
@@ -2924,7 +2921,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table public.foos3_template")
+              end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"public\".\"foos3_template\" does not exist")
             end
 
             it "raises error when parent table is not partitioned" do
@@ -3156,7 +3153,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table foos3")
+              end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"foos3\" does not exist in search path")
             end
 
             it "raises error when table exists but isn't configured with partman" do
@@ -3282,7 +3279,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table foos3")
+              end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"foos3\" does not exist in search path")
             end
 
             it "raises error when table does not exist and fully qualified name provided" do
@@ -3294,7 +3291,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, "Could not find table public.foos3")
+              end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"public\".\"foos3\" does not exist")
             end
 
             it "raises error when table exists but isn't managed by partman" do
@@ -3455,7 +3452,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             it "acquires an exclusive lock on the table" do
               migration.safely_acquire_lock_for_table(table_name) do
-                expect(locks_for_table(table_name, connection: alternate_connection)).to eq([TableLock.new("bogus_table", "AccessExclusiveLock", true)])
+                expect(locks_for_table(table_name, connection: alternate_connection)).to match([
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "AccessExclusiveLock",
+                    granted: true,
+                    pid: kind_of(Integer),
+                  )
+                ])
               end
             end
 
@@ -3478,7 +3482,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
                 block_call_count += 1
                 if block_call_count < 3
-                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "", 5, "active", [["public", "bogus_table"]])]
+                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "", 5, "active", [["bogus_table", "public"]])]
                 else
                   []
                 end
@@ -3491,14 +3495,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            it "does not wait to acquire a lock if same table in different schema is blocked" do
+            it "does not wait to acquire a lock if a table with the same name but in different schema is blocked" do
               stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
 
               ActiveRecord::Base.connection.execute("CREATE TABLE partman.bogus_table(pk SERIAL, i INTEGER)")
 
               begin
                 thread = Thread.new do
-                  migration.safely_acquire_lock_for_table("partman.bogus_table") { sleep 2 }
+                  ActiveRecord::Base.connection.execute(<<~SQL)
+                    LOCK partman.bogus_table;
+                    SELECT pg_sleep(2);
+                  SQL
                 end
 
                 sleep 1.1
@@ -3509,8 +3516,16 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
                 migration.suppress_messages do
                   migration.safely_acquire_lock_for_table(table_name) do
-                    expect(locks_for_table("partman.bogus_table", connection: alternate_connection)).not_to be_empty
-                    expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+                    locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+                    locks_for_other_table = locks_for_table("partman.bogus_table", connection: alternate_connection)
+
+                    aggregate_failures do
+                      expect(locks_for_table.size).to eq(1)
+                      expect(locks_for_other_table.size).to eq(1)
+                      expect(locks_for_table.first.pid).to_not be_nil
+                      expect(locks_for_other_table.first.pid).to_not be_nil
+                      expect(locks_for_table.first.pid).to_not eq(locks_for_other_table.first.pid)
+                    end
                   end
                 end
               ensure
@@ -3526,7 +3541,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               begin
                 thread = Thread.new do
-                  migration.safely_acquire_lock_for_table(:bogus_table_default) { sleep 3 }
+                  ActiveRecord::Base.connection.execute(<<~SQL)
+                    LOCK bogus_table_default;
+                    SELECT pg_sleep(3);
+                  SQL
                 end
 
                 sleep 1.1
@@ -3538,7 +3556,15 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
                 migration.suppress_messages do
                   migration.safely_acquire_lock_for_table(table_name) do
-                    expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+                    locks_for_parent = locks_for_table(table_name, connection: alternate_connection)
+                    locks_for_child = locks_for_table("bogus_table_default", connection: alternate_connection)
+
+                    aggregate_failures do
+                      expect(locks_for_parent.size).to eq(1)
+                      expect(locks_for_child.size).to eq(1)
+                      expect(locks_for_parent.first.pid).to_not be_nil
+                      expect(locks_for_parent.first.pid).to eq(locks_for_child.first.pid)
+                    end
                   end
                 end
               ensure
@@ -3560,7 +3586,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               begin
                 thread = Thread.new do
-                  migration.safely_acquire_lock_for_table(:bogus_table_sub_default) { sleep 3 }
+                  ActiveRecord::Base.connection.execute(<<~SQL)
+                    LOCK bogus_table_sub_default;
+                    SELECT pg_sleep(3);
+                  SQL
                 end
 
                 sleep 1.1
@@ -3572,7 +3601,55 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
                 migration.suppress_messages do
                   migration.safely_acquire_lock_for_table(table_name) do
-                    expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+                    locks_for_parent = locks_for_table(table_name, connection: alternate_connection)
+                    locks_for_sub = locks_for_table("bogus_table_sub_default", connection: alternate_connection)
+
+                    aggregate_failures do
+                      expect(locks_for_parent.size).to eq(1)
+                      expect(locks_for_sub.size).to eq(1)
+                      expect(locks_for_parent.first.pid).to_not be_nil
+                      expect(locks_for_parent.first.pid).to eq(locks_for_sub.first.pid)
+                    end
+                  end
+                end
+              ensure
+                thread.join
+              end
+            end
+
+            it "waits to acquire a lock if the table is non-natively partitioned and child table is blocked" do
+              stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+
+              ActiveRecord::Base.connection.execute(<<~SQL)
+                CREATE TABLE bogus_table_child(pk SERIAL, i INTEGER) INHERITS (#{table_name})
+              SQL
+
+              begin
+                thread = Thread.new do
+                  ActiveRecord::Base.connection.execute(<<~SQL)
+                    LOCK bogus_table_child;
+                    SELECT pg_sleep(3);
+                  SQL
+                end
+
+                sleep 1.1
+
+                expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
+                  .at_least(3)
+                  .times
+                  .and_call_original
+
+                migration.suppress_messages do
+                  migration.safely_acquire_lock_for_table(table_name) do
+                    locks_for_parent = locks_for_table(table_name, connection: alternate_connection)
+                    locks_for_child = locks_for_table("bogus_table_child", connection: alternate_connection)
+
+                    aggregate_failures do
+                      expect(locks_for_parent.size).to eq(1)
+                      expect(locks_for_child.size).to eq(1)
+                      expect(locks_for_parent.first.pid).to_not be_nil
+                      expect(locks_for_parent.first.pid).to eq(locks_for_child.first.pid)
+                    end
                   end
                 end
               ensure
@@ -3651,7 +3728,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions).exactly(2).times do |*args|
                 blocking_queries_calls += 1
                 if blocking_queries_calls == 1
-                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "some_sql_query", "active", 5, [["public", "bogus_table"]])]
+                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "some_sql_query", "active", 5, [["bogus_table", "public"]])]
                 else
                   []
                 end

@@ -1,13 +1,18 @@
 module PgHaMigrations
   class BlockingDatabaseTransactions
     LongRunningTransaction = Struct.new(:database, :current_query, :state, :transaction_age, :tables_with_locks) do
+      def initialize(*args)
+        super
+
+        self.tables_with_locks = tables_with_locks.map { |name, schema| Table.new(name, schema) }.select(&:present?)
+      end
+
       def description
-        locked_tables = tables_with_locks.reject { |identifiers| identifiers.any?(&:nil?) }
         [
           database,
-          locked_tables.size > 0 ? "tables (#{locked_tables.map { |identifiers| _quote_table(*identifiers) }.join(', ')})" : nil,
+          tables_with_locks.size > 0 ? "tables (#{tables_with_locks.map(&:fully_qualified_name).join(', ')})" : nil,
           "#{idle? ? "currently idle " : ""}transaction open for #{transaction_age}",
-          "#{idle? ? "last " : ""}query: #{current_query}"
+          "#{idle? ? "last " : ""}query: #{current_query}",
         ].compact.join(" | ")
       end
 
@@ -17,13 +22,6 @@ module PgHaMigrations
 
       def idle?
         state == "idle in transaction"
-      end
-
-      def _quote_table(schema, table)
-        [
-          ActiveRecord::Base.connection.quote_schema_name(schema),
-          ActiveRecord::Base.connection.quote_table_name(table),
-        ].join(".")
       end
     end
 
@@ -50,7 +48,7 @@ module PgHaMigrations
           psa.#{query_column} as current_query,
           psa.state,
           clock_timestamp() - psa.xact_start AS transaction_age,
-          array_agg(distinct array[ns.nspname, c.relname]) AS tables_with_locks
+          array_agg(distinct array[c.relname, ns.nspname]) AS tables_with_locks
         FROM pg_stat_activity psa -- Cluster wide
           LEFT JOIN pg_locks l ON (psa.#{pid_column} = l.pid)  -- Cluster wide
           LEFT JOIN pg_class c ON ( -- Database wide
@@ -63,7 +61,7 @@ module PgHaMigrations
             l.locktype != 'relation'
             OR (
                ns.nspname != 'pg_catalog'
-               AND c.relkind IN ('r', 'p')
+               AND c.relkind IN ('r', 'p') -- 'r' is a standard table; 'p' is a partition parent
             )
           )
           AND psa.xact_start < clock_timestamp() - ?::interval
