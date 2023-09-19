@@ -78,8 +78,6 @@ module PgHaMigrations
   end
 
   class TableWithLock < Table
-    include Comparable
-
     def self.from_table_name(table, mode)
       super(table).tap do |table_with_lock|
         table_with_lock.mode = mode
@@ -112,8 +110,8 @@ module PgHaMigrations
       super.each { |table_with_lock| table_with_lock.mode = mode }
     end
 
-    def <=>(other)
-      fully_qualified_name <=> other.fully_qualified_name
+    def ==(other)
+      other.is_a?(Table) && fully_qualified_name == other.fully_qualified_name
     end
   end
 
