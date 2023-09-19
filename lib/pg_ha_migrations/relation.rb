@@ -77,6 +77,46 @@ module PgHaMigrations
     end
   end
 
+  class TableWithLock < Table
+    include Comparable
+
+    def self.from_table_name(table, mode)
+      super(table).tap do |table_with_lock|
+        table_with_lock.mode = mode
+      end
+    end
+
+    attr_reader :mode
+
+    def initialize(name, schema, mode=nil)
+      super(name, schema)
+
+      self.mode = mode
+    end
+
+    def mode=(mode)
+      return unless mode.present?
+
+      if mode.is_a?(LockMode)
+        @mode = mode
+      else
+        @mode = LockMode.new(mode)
+      end
+    end
+
+    def conflicts_with?(other)
+      mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
+    end
+
+    def partitions(include_sub_partitions: false)
+      super.each { |table_with_lock| table_with_lock.mode = mode }
+    end
+
+    def <=>(other)
+      fully_qualified_name <=> other.fully_qualified_name
+    end
+  end
+
   class Index < Relation
     # TODO: implement shortening to ensure < 63 bytes
     def self.from_table_and_columns(table, columns)

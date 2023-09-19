@@ -3508,7 +3508,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
                 block_call_count += 1
                 if block_call_count < 3
-                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "", 5, "active", [["bogus_table", "public"]])]
+                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "", 5, "active", [["bogus_table", "public", "AccessExclusiveLock"]])]
                 else
                   []
                 end
@@ -3518,6 +3518,44 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 migration.safely_acquire_lock_for_table(table_name) do
                   expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
                 end
+              end
+            end
+
+            it "does not wait to acquire a lock if the table has an existing but non-conflicting lock" do
+              stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+
+              begin
+                thread = Thread.new do
+                  ActiveRecord::Base.connection.execute(<<~SQL)
+                    LOCK bogus_table IN EXCLUSIVE MODE;
+                    SELECT pg_sleep(2);
+                  SQL
+                end
+
+                sleep 1.1
+
+                expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
+                  .once
+                  .and_call_original
+
+                migration.suppress_messages do
+                  migration.safely_acquire_lock_for_table(table_name, mode: :access_share) do
+                    locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+                    aggregate_failures do
+                      expect(locks_for_table).to contain_exactly(
+                        having_attributes(lock_type: "ExclusiveLock"),
+                        having_attributes(lock_type: "AccessShareLock"),
+                      )
+
+                      expect(locks_for_table.first.pid).to_not be_nil
+                      expect(locks_for_table.last.pid).to_not be_nil
+                      expect(locks_for_table.first.pid).to_not eq(locks_for_table.last.pid)
+                    end
+                  end
+                end
+              ensure
+                thread.join
               end
             end
 
@@ -3754,7 +3792,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions).exactly(2).times do |*args|
                 blocking_queries_calls += 1
                 if blocking_queries_calls == 1
-                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "some_sql_query", "active", 5, [["bogus_table", "public"]])]
+                  [PgHaMigrations::BlockingDatabaseTransactions::LongRunningTransaction.new("", "some_sql_query", "active", 5, [["bogus_table", "public", "AccessExclusiveLock"]])]
                 else
                   []
                 end
