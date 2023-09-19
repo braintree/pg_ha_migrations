@@ -3456,27 +3456,27 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             it "acquires an exclusive lock on the table by default" do
               migration.safely_acquire_lock_for_table(table_name) do
-                expect(locks_for_table(table_name, connection: alternate_connection)).to match([
+                expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
                   having_attributes(
                     table: "bogus_table",
                     lock_type: "AccessExclusiveLock",
                     granted: true,
                     pid: kind_of(Integer),
                   )
-                ])
+                )
               end
             end
 
             it "acquires a lock in a different mode when provided" do
               migration.safely_acquire_lock_for_table(table_name, mode: :share) do
-                expect(locks_for_table(table_name, connection: alternate_connection)).to match([
+                expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
                   having_attributes(
                     table: "bogus_table",
                     lock_type: "ShareLock",
                     granted: true,
                     pid: kind_of(Integer),
                   )
-                ])
+                )
               end
             end
 
@@ -3544,14 +3544,57 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
                     aggregate_failures do
                       expect(locks_for_table).to contain_exactly(
-                        having_attributes(lock_type: "ExclusiveLock"),
-                        having_attributes(lock_type: "AccessShareLock"),
+                        having_attributes(
+                          table: "bogus_table",
+                          lock_type: "ExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        ),
+                        having_attributes(
+                          table: "bogus_table",
+                          lock_type: "AccessShareLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        ),
                       )
 
-                      expect(locks_for_table.first.pid).to_not be_nil
-                      expect(locks_for_table.last.pid).to_not be_nil
                       expect(locks_for_table.first.pid).to_not eq(locks_for_table.last.pid)
                     end
+                  end
+                end
+              ensure
+                thread.join
+              end
+            end
+
+            it "waits to acquire a lock if the table has an existing and conflicting lock" do
+              stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+
+              begin
+                thread = Thread.new do
+                  ActiveRecord::Base.connection.execute(<<~SQL)
+                    LOCK bogus_table IN SHARE UPDATE EXCLUSIVE MODE;
+                    SELECT pg_sleep(3);
+                  SQL
+                end
+
+                sleep 1.1
+
+                expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
+                  .at_least(3)
+                  .times
+                  .and_call_original
+
+                migration.suppress_messages do
+                  migration.safely_acquire_lock_for_table(table_name, mode: :share_row_exclusive) do
+                    expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+                      having_attributes(
+                        table: "bogus_table",
+                        lock_type: "ShareRowExclusiveLock",
+                        granted: true,
+                        pid: kind_of(Integer),
+                      )
+                    )
                   end
                 end
               ensure
@@ -3584,10 +3627,24 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     locks_for_other_table = locks_for_table("partman.bogus_table", connection: alternate_connection)
 
                     aggregate_failures do
-                      expect(locks_for_table.size).to eq(1)
-                      expect(locks_for_other_table.size).to eq(1)
-                      expect(locks_for_table.first.pid).to_not be_nil
-                      expect(locks_for_other_table.first.pid).to_not be_nil
+                      expect(locks_for_table).to contain_exactly(
+                        having_attributes(
+                          table: "bogus_table",
+                          lock_type: "AccessExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        )
+                      )
+
+                      expect(locks_for_other_table).to contain_exactly(
+                        having_attributes(
+                          table: "bogus_table",
+                          lock_type: "AccessExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        )
+                      )
+
                       expect(locks_for_table.first.pid).to_not eq(locks_for_other_table.first.pid)
                     end
                   end
@@ -3624,9 +3681,24 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     locks_for_child = locks_for_table("bogus_table_default", connection: alternate_connection)
 
                     aggregate_failures do
-                      expect(locks_for_parent.size).to eq(1)
-                      expect(locks_for_child.size).to eq(1)
-                      expect(locks_for_parent.first.pid).to_not be_nil
+                      expect(locks_for_parent).to contain_exactly(
+                        having_attributes(
+                          table: "bogus_table",
+                          lock_type: "AccessExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        )
+                      )
+
+                      expect(locks_for_child).to contain_exactly(
+                        having_attributes(
+                          table: "bogus_table_default",
+                          lock_type: "AccessExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        )
+                      )
+
                       expect(locks_for_parent.first.pid).to eq(locks_for_child.first.pid)
                     end
                   end
@@ -3669,9 +3741,24 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     locks_for_sub = locks_for_table("bogus_table_sub_default", connection: alternate_connection)
 
                     aggregate_failures do
-                      expect(locks_for_parent.size).to eq(1)
-                      expect(locks_for_sub.size).to eq(1)
-                      expect(locks_for_parent.first.pid).to_not be_nil
+                      expect(locks_for_parent).to contain_exactly(
+                        having_attributes(
+                          table: "bogus_table",
+                          lock_type: "AccessExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        )
+                      )
+
+                      expect(locks_for_sub).to contain_exactly(
+                        having_attributes(
+                          table: "bogus_table_sub_default",
+                          lock_type: "AccessExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        )
+                      )
+
                       expect(locks_for_parent.first.pid).to eq(locks_for_sub.first.pid)
                     end
                   end
@@ -3709,9 +3796,24 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     locks_for_child = locks_for_table("bogus_table_child", connection: alternate_connection)
 
                     aggregate_failures do
-                      expect(locks_for_parent.size).to eq(1)
-                      expect(locks_for_child.size).to eq(1)
-                      expect(locks_for_parent.first.pid).to_not be_nil
+                      expect(locks_for_parent).to contain_exactly(
+                        having_attributes(
+                          table: "bogus_table",
+                          lock_type: "AccessExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        )
+                      )
+
+                      expect(locks_for_child).to contain_exactly(
+                        having_attributes(
+                          table: "bogus_table_child",
+                          lock_type: "AccessExclusiveLock",
+                          granted: true,
+                          pid: kind_of(Integer),
+                        )
+                      )
+
                       expect(locks_for_parent.first.pid).to eq(locks_for_child.first.pid)
                     end
                   end
