@@ -536,11 +536,11 @@ module PgHaMigrations::SafeStatements
       Thread.current[__method__] = table_with_lock
     end
 
-    target_tables = [table_with_lock]
-
     # Locking a partitioned table will also lock child tables (including sub-partitions),
     # so we need to check for blocking queries on those tables as well
-    target_tables.concat(table_with_lock.partitions(include_sub_partitions: true))
+    target_tables = table_with_lock
+      .partitions(include_sub_partitions: true)
+      .prepend(table_with_lock)
 
     successfully_acquired_lock = false
 

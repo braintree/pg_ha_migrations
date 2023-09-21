@@ -93,12 +93,10 @@ module PgHaMigrations
     end
 
     def mode=(mode)
-      return unless mode.present?
-
-      if mode.is_a?(LockMode)
-        @mode = mode
-      else
+      if mode.present?
         @mode = LockMode.new(mode)
+      else
+        @mode = mode
       end
     end
 
