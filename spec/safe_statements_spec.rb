@@ -618,7 +618,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "calls safely_acquire_lock_for_table" do
             migration = Class.new(migration_klass).new
 
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos, mode: :access_exclusive)
             migration.unsafe_add_column(:foos, :bar, :text)
           end
         end
@@ -796,7 +796,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass).new
 
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos, mode: :access_exclusive)
             migration.safe_change_column_default(:foos, :bar, 5)
           end
 
@@ -1081,7 +1081,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "calls safely_acquire_lock_for_table" do
             migration = Class.new(migration_klass).new
 
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos, mode: :access_exclusive)
             migration.safe_make_column_nullable(:foos, :bar)
           end
         end
@@ -1251,7 +1251,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "calls safely_acquire_lock_for_table" do
             migration = Class.new(migration_klass).new
 
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos, mode: :access_exclusive)
             migration.unsafe_make_column_not_nullable(:foos, :bar, :estimated_rows => 0)
           end
         end
@@ -1302,8 +1302,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY/)
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/)
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/)
             end
 
@@ -1332,8 +1334,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
@@ -1371,8 +1375,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
@@ -1406,8 +1412,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE UNIQUE INDEX "index_foos3_on_created_at_and_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE UNIQUE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
@@ -1442,8 +1450,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
@@ -1478,8 +1488,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_lower_text_column" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
@@ -1521,8 +1533,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/)
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_on_updated_at" ON ONLY/)
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/)
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/)
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/)
             end
 
@@ -1555,8 +1569,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
@@ -1588,8 +1604,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3'" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3'_bar""_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "index_foos3'_child_on_updated_at" ON/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3'" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
             end
 
@@ -1634,8 +1652,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "partman"."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "partman"."foos3" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
             end
 
@@ -1680,8 +1700,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"."foos3" IN ACCESS EXCLUSIVE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
             end
 
@@ -2194,7 +2216,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "calls safely_acquire_lock_for_table" do
             migration = Class.new(migration_klass).new
 
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos, mode: :access_exclusive)
             migration.safe_rename_constraint(:foos, :from => :constraint_foo_bar_is_not_null, :to => :other_constraint)
           end
         end
@@ -2214,7 +2236,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "calls safely_acquire_lock_for_table" do
             migration = Class.new(migration_klass).new
 
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos, mode: :access_exclusive)
             migration.unsafe_remove_constraint(:foos, :name => :constraint_foo_bar_is_not_null)
           end
 
