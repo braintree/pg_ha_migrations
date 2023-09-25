@@ -1,11 +1,31 @@
 module PgHaMigrations
-  Relation = Struct.new(:name, :schema) do
+  Relation = Struct.new(:name, :schema, :mode) do
     def self.connection
       ActiveRecord::Base.connection
     end
 
     delegate :inspect, to: :name
     delegate :connection, to: :class
+
+    def initialize(name, schema, mode=nil)
+      super(name, schema)
+
+      self.mode = mode
+    end
+
+    def mode=(mode)
+      if mode.present?
+        self[:mode] = LockMode.new(mode)
+      else
+        self[:mode] = mode
+      end
+    end
+
+    def conflicts_with?(other)
+      self == other && (
+        mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
+      )
+    end
 
     def fully_qualified_name
       @fully_qualified_name ||= [
@@ -16,6 +36,10 @@ module PgHaMigrations
 
     def present?
       name.present? && schema.present?
+    end
+
+    def ==(other)
+      other.is_a?(Relation) && name == other.name && schema == other.schema
     end
   end
 
@@ -42,6 +66,10 @@ module PgHaMigrations
       new(pg_name.identifier, schema)
     end
 
+    def self.from_table_name_with_lock(table, mode)
+      from_table_name(table).tap { |table| table.mode = mode }
+    end
+
     def natively_partitioned?
       !!connection.select_value(<<~SQL)
         SELECT true
@@ -53,9 +81,9 @@ module PgHaMigrations
       SQL
     end
 
-    def partitions(include_sub_partitions: false)
+    def partitions(include_sub_partitions: false, include_self: false)
       tables = connection.structs_from_sql(self.class, <<~SQL)
-        SELECT child.relname AS name, child_ns.nspname AS schema
+        SELECT child.relname AS name, child_ns.nspname AS schema, NULLIF('#{mode}', '') AS mode
         FROM pg_inherits
           JOIN pg_class parent        ON pg_inherits.inhparent = parent.oid
           JOIN pg_class child         ON pg_inherits.inhrelid  = child.oid
@@ -73,43 +101,9 @@ module PgHaMigrations
         tables.concat(sub_partitions)
       end
 
+      tables.prepend(self) if include_self
+
       tables
-    end
-  end
-
-  class TableWithLock < Table
-    def self.from_table_name(table, mode)
-      super(table).tap do |table_with_lock|
-        table_with_lock.mode = mode
-      end
-    end
-
-    attr_reader :mode
-
-    def initialize(name, schema, mode=nil)
-      super(name, schema)
-
-      self.mode = mode
-    end
-
-    def mode=(mode)
-      if mode.present?
-        @mode = LockMode.new(mode)
-      else
-        @mode = mode
-      end
-    end
-
-    def conflicts_with?(other)
-      mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
-    end
-
-    def partitions(include_sub_partitions: false)
-      super.each { |table_with_lock| table_with_lock.mode = mode }
-    end
-
-    def ==(other)
-      other.is_a?(Table) && fully_qualified_name == other.fully_qualified_name
     end
   end
 

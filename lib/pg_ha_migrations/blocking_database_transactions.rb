@@ -4,7 +4,7 @@ module PgHaMigrations
       def initialize(*args)
         super
 
-        self.tables_with_locks = tables_with_locks.map { |args| TableWithLock.new(*args) }.select(&:present?)
+        self.tables_with_locks = tables_with_locks.map { |args| Table.new(*args) }.select(&:present?)
       end
 
       def description

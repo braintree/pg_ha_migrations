@@ -83,7 +83,8 @@ module PgHaMigrations
     end
 
     def to_sql
-      to_s
+      mode
+        .to_s
         .upcase
         .gsub("_", " ")
     end
