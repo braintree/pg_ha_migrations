@@ -85,8 +85,7 @@ module PgHaMigrations
     def to_sql
       to_s
         .upcase
-        .split("_")
-        .join(" ")
+        .gsub("_", " ")
     end
 
     def <=>(other)
