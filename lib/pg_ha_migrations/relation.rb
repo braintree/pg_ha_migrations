@@ -44,7 +44,7 @@ module PgHaMigrations
   end
 
   class Table < Relation
-    def self.from_table_name(table)
+    def self.from_table_name(table, mode=nil)
       pg_name = ActiveRecord::ConnectionAdapters::PostgreSQL::Utils.extract_schema_qualified_name(table.to_s)
 
       schema_conditional = if pg_name.schema
@@ -63,11 +63,7 @@ module PgHaMigrations
 
       raise UndefinedTableError, "Table #{pg_name.quoted} does not exist#{" in search path" unless pg_name.schema}" unless schema.present?
 
-      new(pg_name.identifier, schema)
-    end
-
-    def self.from_table_name_with_lock(table, mode)
-      from_table_name(table).tap { |table| table.mode = mode }
+      new(pg_name.identifier, schema, mode)
     end
 
     def natively_partitioned?

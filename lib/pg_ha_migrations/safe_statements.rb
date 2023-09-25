@@ -524,7 +524,7 @@ module PgHaMigrations::SafeStatements
 
     _check_postgres_adapter!
 
-    targeted_table = PgHaMigrations::Table.from_table_name_with_lock(table, mode)
+    targeted_table = PgHaMigrations::Table.from_table_name(table, mode)
 
     if nested_targeted_table
       if nested_targeted_table != targeted_table
