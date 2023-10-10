@@ -4,7 +4,7 @@ services:
     build:
       context: .
       args:
-        - PGVERSION=${PGVERSION:-15}
+        - PGVERSION=${PGVERSION:-16}
     ports:
       - "5432:5432"
     environment:
