@@ -1796,6 +1796,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises error when child index name is too large" do
+            if ActiveRecord::VERSION::MAJOR >= 7 && ActiveRecord::VERSION::MINOR >= 1
+              skip "Rails 7.1+ will automatically generate index names less than 63 bytes"
+            end
+
             create_range_partitioned_table("x" * 43, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
