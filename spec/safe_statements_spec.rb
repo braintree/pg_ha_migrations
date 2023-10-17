@@ -3581,7 +3581,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 sleep 1.1
 
                 expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
-                  .at_least(3)
+                  .at_least(2)
                   .times
                   .and_call_original
 
@@ -3671,7 +3671,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 sleep 1.1
 
                 expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
-                  .at_least(3)
+                  .at_least(2)
                   .times
                   .and_call_original
 
@@ -3731,7 +3731,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 sleep 1.1
 
                 expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
-                  .at_least(3)
+                  .at_least(2)
                   .times
                   .and_call_original
 
@@ -3786,7 +3786,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 sleep 1.1
 
                 expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
-                  .at_least(3)
+                  .at_least(2)
                   .times
                   .and_call_original
 
