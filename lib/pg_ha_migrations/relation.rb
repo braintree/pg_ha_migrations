@@ -10,15 +10,7 @@ module PgHaMigrations
     def initialize(name, schema, mode=nil)
       super(name, schema)
 
-      self.mode = mode
-    end
-
-    def mode=(mode)
-      if mode.present?
-        self[:mode] = LockMode.new(mode)
-      else
-        self[:mode] = mode
-      end
+      self.mode = LockMode.new(mode) if mode.present?
     end
 
     def conflicts_with?(other)
