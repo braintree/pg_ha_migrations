@@ -68,7 +68,7 @@ module PgHaMigrations
 
     attr_reader :mode
 
-    delegate :inspect, :to_s, to: :mode
+    delegate :to_s, to: :mode
 
     def initialize(mode)
       @mode = mode

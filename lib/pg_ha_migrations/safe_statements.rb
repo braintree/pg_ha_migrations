@@ -530,7 +530,7 @@ module PgHaMigrations::SafeStatements
       if nested_target_table != target_table
         raise PgHaMigrations::InvalidMigrationError, "Nested lock detected! Cannot acquire lock on #{target_table.fully_qualified_name} while #{nested_target_table.fully_qualified_name} is locked."
       elsif nested_target_table.mode < target_table.mode
-        raise PgHaMigrations::InvalidMigrationError, "Lock escalation detected! Cannot change lock level from #{nested_target_table.mode.inspect} to #{target_table.mode.inspect} for #{target_table.fully_qualified_name}."
+        raise PgHaMigrations::InvalidMigrationError, "Lock escalation detected! Cannot change lock level from :#{nested_target_table.mode} to :#{target_table.mode} for #{target_table.fully_qualified_name}."
       end
     else
       Thread.current[__method__] = target_table
