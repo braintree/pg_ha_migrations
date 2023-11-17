@@ -3918,10 +3918,76 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "allows re-entrancy" do
               migration.safely_acquire_lock_for_table(table_name) do
                 migration.safely_acquire_lock_for_table(table_name) do
-                  expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+                  expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+                    having_attributes(
+                      table: "bogus_table",
+                      lock_type: "AccessExclusiveLock",
+                      granted: true,
+                      pid: kind_of(Integer),
+                    ),
+                  )
                 end
-                expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+
+                expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "AccessExclusiveLock",
+                    granted: true,
+                    pid: kind_of(Integer),
+                  ),
+                )
               end
+
+              expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+            end
+
+            it "allows re-entrancy when inner lock is a lower level" do
+              migration.safely_acquire_lock_for_table(table_name) do
+                migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) do
+                  locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+                  aggregate_failures do
+                    expect(locks_for_table).to contain_exactly(
+                      having_attributes(
+                        table: "bogus_table",
+                        lock_type: "AccessExclusiveLock",
+                        granted: true,
+                        pid: kind_of(Integer),
+                      ),
+                      having_attributes(
+                        table: "bogus_table",
+                        lock_type: "ExclusiveLock",
+                        granted: true,
+                        pid: kind_of(Integer),
+                      ),
+                    )
+
+                    expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
+                  end
+                end
+
+                locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+                aggregate_failures do
+                  expect(locks_for_table).to contain_exactly(
+                    having_attributes(
+                      table: "bogus_table",
+                      lock_type: "AccessExclusiveLock",
+                      granted: true,
+                      pid: kind_of(Integer),
+                    ),
+                    having_attributes(
+                      table: "bogus_table",
+                      lock_type: "ExclusiveLock", # Postgres releases the inner lock once the outer lock is released
+                      granted: true,
+                      pid: kind_of(Integer),
+                    ),
+                  )
+
+                  expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
+                end
+              end
+
               expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
             end
 
@@ -3938,6 +4004,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
                     PgHaMigrations::InvalidMigrationError,
                     "Lock escalation detected! Cannot change lock level from :share to :exclusive for \"public\".\"bogus_table\"."
                   )
+
+                  # the exception above was caught and therefore the parent lock shouldn't be released yet
+                  expect(locks_for_table(table_name, connection: alternate_connection)).to_not be_empty
 
                   migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) {}
                 end
