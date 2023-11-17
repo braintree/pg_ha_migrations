@@ -154,6 +154,22 @@ module PgHaMigrations::SafeStatements
     end
   end
 
+  def safe_add_index_on_empty_table(table, columns, options={})
+    if options[:algorithm] == :concurrently
+      raise ArgumentError, "Cannot call safe_add_index_on_empty_table with :algorithm => :concurrently"
+    end
+
+    # Avoids taking out an unnecessary SHARE lock if the table does have data
+    _ensure_empty_table!(table)
+
+    safely_acquire_lock_for_table(table, mode: :share) do
+      # Ensure data wasn't written in the split second after the first check
+      _ensure_empty_table!(table)
+
+      unsafe_add_index(table, columns, **options)
+    end
+  end
+
   def safe_add_concurrent_index(table, columns, options={})
     unsafe_add_index(table, columns, **options.merge(:algorithm => :concurrently))
   end
@@ -507,6 +523,14 @@ module PgHaMigrations::SafeStatements
 
   def _type_is_enum(type)
     ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type JOIN pg_enum ON pg_type.oid = pg_enum.enumtypid").include?(type.to_s)
+  end
+
+  def _ensure_empty_table!(table)
+    table = PgHaMigrations::Table.from_table_name(table)
+
+    if connection.select_value("SELECT EXISTS (SELECT 1 FROM #{table.fully_qualified_name} LIMIT 1)")
+      raise PgHaMigrations::InvalidMigrationError, "Table #{table.inspect} has rows. Please use safe_add_concurrent_index instead."
+    end
   end
 
   def migrate(direction)

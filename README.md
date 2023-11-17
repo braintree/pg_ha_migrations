@@ -171,6 +171,14 @@ Unsafely make a column not nullable.
 unsafe_make_column_not_nullable :table, :column
 ```
 
+#### safe\_add\_index\_on\_empty\_table
+
+Safely add an index on a table with zero rows. This will raise an error if the table contains data.
+
+```ruby
+safe_add_index_on_empty_table :table, :column
+```
+
 #### safe\_add\_concurrent\_index
 
 Add an index concurrently.

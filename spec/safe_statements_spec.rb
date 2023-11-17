@@ -1256,6 +1256,110 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "safe_add_index_on_empty_table" do
+          it "creates index when table is empty" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_index_on_empty_table :foos, [:bar]
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /LOCK "public"\."foos" IN SHARE MODE/, count: 1)
+              .and(make_database_queries(matching: /CREATE INDEX "index_foos_on_bar"/, count: 1))
+
+            indexes = ActiveRecord::Base.connection.indexes("foos")
+            expect(indexes.size).to eq(1)
+            expect(indexes.first).to have_attributes(
+              table: "foos",
+              name: "index_foos_on_bar",
+              columns: ["bar"],
+            )
+          end
+
+          it "raises error when :algorithm => :concurrently provided" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_index_on_empty_table :foos, [:bar], algorithm: :concurrently
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Cannot call safe_add_index_on_empty_table with :algorithm => :concurrently")
+          end
+
+          it "raises error when table contains rows" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+
+                unsafe_execute("INSERT INTO foos DEFAULT VALUES")
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_index_on_empty_table :foos, [:bar]
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/SELECT EXISTS/).once.and_call_original
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" has rows. Please use safe_add_concurrent_index instead.")
+
+            indexes = ActiveRecord::Base.connection.indexes("foos")
+            expect(indexes).to be_empty
+          end
+
+          it "raises error when table receives writes immediately after the first check" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_index_on_empty_table :foos, [:bar]
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/SELECT EXISTS/).twice.and_wrap_original do |m, *args|
+              m.call(*args).tap do
+                ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" has rows. Please use safe_add_concurrent_index instead.")
+
+            indexes = ActiveRecord::Base.connection.indexes("foos")
+            expect(indexes).to be_empty
+          end
+        end
+
         describe "safe_add_concurrent_index" do
           it "creates an index using the concurrent algorithm" do
             setup_migration = Class.new(migration_klass) do
