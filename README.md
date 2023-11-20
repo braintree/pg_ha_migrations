@@ -424,10 +424,18 @@ safe_partman_reapply_privileges :table
 
 #### safely\_acquire\_lock\_for\_table
 
-Safely acquire a lock for a table.
+Safely acquire an access exclusive lock for a table.
 
 ```ruby
 safely_acquire_lock_for_table(:table) do
+  ...
+end
+```
+
+Safely acquire a lock for a table in a different mode.
+
+```ruby
+safely_acquire_lock_for_table(:table, mode: :share) do
   ...
 end
 ```

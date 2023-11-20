@@ -1,11 +1,23 @@
 module PgHaMigrations
-  Relation = Struct.new(:name, :schema) do
+  Relation = Struct.new(:name, :schema, :mode) do
     def self.connection
       ActiveRecord::Base.connection
     end
 
     delegate :inspect, to: :name
     delegate :connection, to: :class
+
+    def initialize(name, schema, mode=nil)
+      super(name, schema)
+
+      self.mode = LockMode.new(mode) if mode.present?
+    end
+
+    def conflicts_with?(other)
+      self == other && (
+        mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
+      )
+    end
 
     def fully_qualified_name
       @fully_qualified_name ||= [
@@ -17,10 +29,14 @@ module PgHaMigrations
     def present?
       name.present? && schema.present?
     end
+
+    def ==(other)
+      other.is_a?(Relation) && name == other.name && schema == other.schema
+    end
   end
 
   class Table < Relation
-    def self.from_table_name(table)
+    def self.from_table_name(table, mode=nil)
       pg_name = ActiveRecord::ConnectionAdapters::PostgreSQL::Utils.extract_schema_qualified_name(table.to_s)
 
       schema_conditional = if pg_name.schema
@@ -39,7 +55,7 @@ module PgHaMigrations
 
       raise UndefinedTableError, "Table #{pg_name.quoted} does not exist#{" in search path" unless pg_name.schema}" unless schema.present?
 
-      new(pg_name.identifier, schema)
+      new(pg_name.identifier, schema, mode)
     end
 
     def natively_partitioned?
@@ -53,9 +69,9 @@ module PgHaMigrations
       SQL
     end
 
-    def partitions(include_sub_partitions: false)
+    def partitions(include_sub_partitions: false, include_self: false)
       tables = connection.structs_from_sql(self.class, <<~SQL)
-        SELECT child.relname AS name, child_ns.nspname AS schema
+        SELECT child.relname AS name, child_ns.nspname AS schema, NULLIF('#{mode}', '') AS mode
         FROM pg_inherits
           JOIN pg_class parent        ON pg_inherits.inhparent = parent.oid
           JOIN pg_class child         ON pg_inherits.inhrelid  = child.oid
@@ -72,6 +88,8 @@ module PgHaMigrations
 
         tables.concat(sub_partitions)
       end
+
+      tables.prepend(self) if include_self
 
       tables
     end

@@ -4,7 +4,7 @@ module PgHaMigrations
       def initialize(*args)
         super
 
-        self.tables_with_locks = tables_with_locks.map { |name, schema| Table.new(name, schema) }.select(&:present?)
+        self.tables_with_locks = tables_with_locks.map { |args| Table.new(*args) }.select(&:present?)
       end
 
       def description
@@ -48,7 +48,7 @@ module PgHaMigrations
           psa.#{query_column} as current_query,
           psa.state,
           clock_timestamp() - psa.xact_start AS transaction_age,
-          array_agg(distinct array[c.relname, ns.nspname]) AS tables_with_locks
+          array_agg(distinct array[c.relname, ns.nspname, l.mode]) AS tables_with_locks
         FROM pg_stat_activity psa -- Cluster wide
           LEFT JOIN pg_locks l ON (psa.#{pid_column} = l.pid)  -- Cluster wide
           LEFT JOIN pg_class c ON ( -- Database wide

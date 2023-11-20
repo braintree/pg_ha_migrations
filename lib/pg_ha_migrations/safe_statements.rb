@@ -519,25 +519,26 @@ module PgHaMigrations::SafeStatements
     super(conn, direction)
   end
 
-  def safely_acquire_lock_for_table(table, &block)
-    nested_lock = Thread.current[__method__]
+  def safely_acquire_lock_for_table(table, mode: :access_exclusive, &block)
+    nested_target_table = Thread.current[__method__]
 
     _check_postgres_adapter!
 
-    table = PgHaMigrations::Table.from_table_name(table)
+    target_table = PgHaMigrations::Table.from_table_name(table, mode)
 
-    # Disallow nested locks unless targeting the same table
-    if nested_lock && nested_lock != table
-      raise PgHaMigrations::InvalidMigrationError, "Nested lock detected! Cannot acquire lock on #{table.fully_qualified_name} while #{nested_lock.fully_qualified_name} is locked."
+    if nested_target_table
+      if nested_target_table != target_table
+        raise PgHaMigrations::InvalidMigrationError, "Nested lock detected! Cannot acquire lock on #{target_table.fully_qualified_name} while #{nested_target_table.fully_qualified_name} is locked."
+      elsif nested_target_table.mode < target_table.mode
+        raise PgHaMigrations::InvalidMigrationError, "Lock escalation detected! Cannot change lock level from :#{nested_target_table.mode} to :#{target_table.mode} for #{target_table.fully_qualified_name}."
+      end
     else
-      Thread.current[__method__] = table
+      Thread.current[__method__] = target_table
     end
-
-    target_tables = [table]
 
     # Locking a partitioned table will also lock child tables (including sub-partitions),
     # so we need to check for blocking queries on those tables as well
-    target_tables.concat(table.partitions(include_sub_partitions: true))
+    target_tables = target_table.partitions(include_sub_partitions: true, include_self: true)
 
     successfully_acquired_lock = false
 
@@ -545,8 +546,10 @@ module PgHaMigrations::SafeStatements
       while (
         blocking_transactions = PgHaMigrations::BlockingDatabaseTransactions.find_blocking_transactions("#{PgHaMigrations::LOCK_TIMEOUT_SECONDS} seconds")
         blocking_transactions.any? do |query|
-          query.tables_with_locks.any? do |table|
-            target_tables.include?(table)
+          query.tables_with_locks.any? do |locked_table|
+            target_tables.any? do |target_table|
+              target_table.conflicts_with?(locked_table)
+            end
           end
         end
       )
@@ -561,13 +564,13 @@ module PgHaMigrations::SafeStatements
         adjust_timeout_method = connection.postgresql_version >= 9_03_00 ? :adjust_lock_timeout : :adjust_statement_timeout
         begin
           method(adjust_timeout_method).call(PgHaMigrations::LOCK_TIMEOUT_SECONDS) do
-            connection.execute("LOCK #{table.fully_qualified_name};")
+            connection.execute("LOCK #{target_table.fully_qualified_name} IN #{target_table.mode.to_sql} MODE;")
           end
           successfully_acquired_lock = true
         rescue ActiveRecord::StatementInvalid => e
           if e.message =~ /PG::LockNotAvailable.+ lock timeout/ || e.message =~ /PG::QueryCanceled.+ statement timeout/
             sleep_seconds = PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS
-            say "Timed out trying to acquire an exclusive lock on the #{table.fully_qualified_name} table."
+            say "Timed out trying to acquire #{target_table.mode.to_sql} lock on the #{target_table.fully_qualified_name} table."
             say "Sleeping for #{sleep_seconds}s to allow potentially queued up queries to finish before continuing."
             sleep(sleep_seconds)
 
@@ -583,7 +586,7 @@ module PgHaMigrations::SafeStatements
       end
     end
   ensure
-    Thread.current[__method__] = nil unless nested_lock
+    Thread.current[__method__] = nil unless nested_target_table
   end
 
   def adjust_lock_timeout(timeout_seconds = PgHaMigrations::LOCK_TIMEOUT_SECONDS, &block)
