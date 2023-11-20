@@ -1899,6 +1899,34 @@ RSpec.describe PgHaMigrations::SafeStatements do
               migration.suppress_messages { migration.migrate(:up) }
             end.not_to make_database_queries(matching: /int4_ops/)
           end
+
+          it "generates index name with hashed identifier when default index name is too large" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table "x" * 51
+                unsafe_add_column "x" * 51, :bar, :text
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_index "x" * 51, [:bar]
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /CREATE INDEX "idx_on_bar_d7a594ad66"/, count: 1)
+
+            indexes = ActiveRecord::Base.connection.indexes("x" * 51)
+            expect(indexes.size).to eq(1)
+            expect(indexes.first).to have_attributes(
+              table: "x" * 51,
+              name: "idx_on_bar_d7a594ad66",
+              columns: ["bar"],
+            )
+          end
         end
 
         describe "safe_remove_concurrent_index" do
