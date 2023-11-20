@@ -1278,7 +1278,39 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             indexes = ActiveRecord::Base.connection.indexes("foos")
             expect(indexes.size).to eq(1)
-            expect(indexes.first).to have_attributes(:table => "foos", :name => "index_foos_on_bar", :columns => ["bar"])
+            expect(indexes.first).to have_attributes(
+              table: "foos",
+              name: "index_foos_on_bar",
+              columns: ["bar"],
+            )
+          end
+
+          it "generates index name with hashed identifier when default index name is too large" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table "x" * 51
+                unsafe_add_column "x" * 51, :bar, :text
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_index "x" * 51, [:bar]
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /CREATE +INDEX CONCURRENTLY/, count: 1)
+
+            indexes = ActiveRecord::Base.connection.indexes("x" * 51)
+            expect(indexes.size).to eq(1)
+            expect(indexes.first).to have_attributes(
+              table: "x" * 51,
+              name: "idx_on_bar_d7a594ad66",
+              columns: ["bar"],
+            )
           end
         end
 
@@ -1778,6 +1810,26 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error(PgHaMigrations::InvalidMigrationError, "Unexpected state. Parent index \"index_foos3_on_updated_at\" is invalid")
           end
 
+          it "generates index name with hashed identifier when default child index name is too large" do
+            create_range_partitioned_table("x" * 42, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index "x" * 42, :updated_at
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_#{"x" * 42}_on_updated_at" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "idx_on_updated_at_\w{10}/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
+            end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+          end
+
           it "raises error when parent index name is too large" do
             create_range_partitioned_table(:foos3, migration_klass)
 
@@ -1792,27 +1844,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error(
               ArgumentError,
               "Index name '#{"x" * 64}' on table 'foos3' is too long; the limit is 63 characters"
-            )
-          end
-
-          it "raises error when child index name is too large" do
-            if ActiveRecord::VERSION::MAJOR >= 7 && ActiveRecord::VERSION::MINOR >= 1
-              skip "Rails 7.1+ will automatically generate index names less than 63 bytes"
-            end
-
-            create_range_partitioned_table("x" * 43, migration_klass, with_partman: true)
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_concurrent_partitioned_index "x" * 43, :updated_at
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(
-              ArgumentError,
-              /Index name 'index_#{"x" * 43}_.+_on_updated_at' on table '#{"x" * 43}_.+' is too long; the limit is 63 characters/
             )
           end
 

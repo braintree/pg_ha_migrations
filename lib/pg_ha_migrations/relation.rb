@@ -96,9 +96,23 @@ module PgHaMigrations
   end
 
   class Index < Relation
-    # TODO: implement shortening to ensure < 63 bytes
+    MAX_NAME_SIZE = 63 # bytes
+
     def self.from_table_and_columns(table, columns)
-      new(connection.index_name(table.name, columns), table)
+      name = connection.index_name(table.name, columns)
+
+      # modified from https://github.com/rails/rails/pull/47753
+      if name.bytesize > MAX_NAME_SIZE
+        hashed_identifier = "_#{OpenSSL::Digest::SHA256.hexdigest(name).first(10)}"
+        description = name.sub("index_#{table.name}_on", "idx_on")
+
+        short_limit = MAX_NAME_SIZE - hashed_identifier.bytesize
+        short_description = description.mb_chars.limit(short_limit).to_s
+
+        name = "#{short_description}#{hashed_identifier}"
+      end
+
+      new(name, table)
     end
 
     attr_accessor :table
