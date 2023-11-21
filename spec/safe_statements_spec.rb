@@ -1927,6 +1927,18 @@ RSpec.describe PgHaMigrations::SafeStatements do
               columns: ["bar"],
             )
           end
+
+          it "raises error when table does not exist" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_index :foo, :bar
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"foo\" does not exist in search path")
+          end
         end
 
         describe "safe_remove_concurrent_index" do
