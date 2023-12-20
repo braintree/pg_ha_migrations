@@ -3,6 +3,5 @@
 source "https://rubygems.org"
 
 gem "rails", "7.1.0"
-gem "db-query-matchers", git: "https://github.com/jrochkind/db-query-matchers", branch: "allow_rails_7.1"
 
 gemspec path: "../"
