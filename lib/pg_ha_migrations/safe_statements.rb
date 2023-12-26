@@ -74,7 +74,7 @@ module PgHaMigrations::SafeStatements
   end
 
   def unsafe_add_column(table, column, type, options = {})
-    safely_acquire_lock_for_table(table) do
+    safely_acquire_lock_for_table(table, mode: :access_exclusive) do
       super(table, column, type, **options)
     end
   end
@@ -137,19 +137,19 @@ module PgHaMigrations::SafeStatements
       ERROR
     end
 
-    safely_acquire_lock_for_table(table_name) do
+    safely_acquire_lock_for_table(table_name, mode: :access_exclusive) do
       unsafe_change_column_default(table_name, column_name, default_value)
     end
   end
 
   def safe_make_column_nullable(table, column)
-    safely_acquire_lock_for_table(table) do
+    safely_acquire_lock_for_table(table, mode: :access_exclusive) do
       unsafe_execute "ALTER TABLE #{table} ALTER COLUMN #{column} DROP NOT NULL"
     end
   end
 
   def unsafe_make_column_not_nullable(table, column, options={}) # options arg is only present for backwards compatiblity
-    safely_acquire_lock_for_table(table) do
+    safely_acquire_lock_for_table(table, mode: :access_exclusive) do
       unsafe_execute "ALTER TABLE #{table} ALTER COLUMN #{column} SET NOT NULL"
     end
   end
@@ -204,8 +204,7 @@ module PgHaMigrations::SafeStatements
       PgHaMigrations::Index.from_table_and_columns(child_table, columns)
     end
 
-    # TODO: take out ShareLock after issue #39 is implemented
-    safely_acquire_lock_for_table(parent_table.fully_qualified_name) do
+    safely_acquire_lock_for_table(parent_table.fully_qualified_name, mode: :share) do
       # CREATE INDEX ON ONLY parent_table
       unsafe_add_index(
         parent_table.fully_qualified_name,
@@ -235,7 +234,7 @@ module PgHaMigrations::SafeStatements
 
     # Avoid taking out an unnecessary lock if there are no child tables to attach
     if child_indexes.present?
-      safely_acquire_lock_for_table(parent_table.fully_qualified_name) do
+      safely_acquire_lock_for_table(parent_table.fully_qualified_name, mode: :access_exclusive) do
         child_indexes.each do |child_index|
           say_with_time "Attaching index #{child_index.inspect} to #{parent_index.inspect}" do
             connection.execute(<<~SQL)
@@ -279,7 +278,7 @@ module PgHaMigrations::SafeStatements
     quoted_constraint_to_name = connection.quote_table_name(to)
     sql = "ALTER TABLE #{quoted_table_name} RENAME CONSTRAINT #{quoted_constraint_from_name} TO #{quoted_constraint_to_name}"
 
-    safely_acquire_lock_for_table(table) do
+    safely_acquire_lock_for_table(table, mode: :access_exclusive) do
       say_with_time "rename_constraint(#{table.inspect}, from: #{from.inspect}, to: #{to.inspect})" do
         connection.execute(sql)
       end
@@ -293,7 +292,7 @@ module PgHaMigrations::SafeStatements
     quoted_constraint_name = connection.quote_table_name(name)
     sql = "ALTER TABLE #{quoted_table_name} DROP CONSTRAINT #{quoted_constraint_name}"
 
-    safely_acquire_lock_for_table(table) do
+    safely_acquire_lock_for_table(table, mode: :access_exclusive) do
       say_with_time "remove_constraint(#{table.inspect}, name: #{name.inspect})" do
         connection.execute(sql)
       end
