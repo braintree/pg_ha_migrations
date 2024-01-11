@@ -59,7 +59,9 @@ module PgHaMigrations
     end
 
     def natively_partitioned?
-      !!connection.select_value(<<~SQL)
+      return @natively_partitioned if defined?(@natively_partitioned)
+
+      @natively_partitioned = !!connection.select_value(<<~SQL)
         SELECT true
         FROM pg_partitioned_table, pg_class, pg_namespace
         WHERE pg_class.oid = pg_partitioned_table.partrelid
@@ -79,6 +81,7 @@ module PgHaMigrations
           JOIN pg_namespace child_ns  ON child.relnamespace = child_ns.oid
         WHERE parent.relname = #{connection.quote(name)}
           AND parent_ns.nspname = #{connection.quote(schema)}
+        ORDER BY child.oid -- Ensure consistent ordering for tests
       SQL
 
       if include_sub_partitions

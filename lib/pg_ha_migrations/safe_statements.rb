@@ -199,8 +199,6 @@ module PgHaMigrations::SafeStatements
     return if if_not_exists && parent_index.valid?
 
     child_indexes = parent_table.partitions.map do |child_table|
-      raise PgHaMigrations::InvalidMigrationError, "Partitioned table #{parent_table.inspect} contains sub-partitions" if child_table.natively_partitioned?
-
       PgHaMigrations::Index.from_table_and_columns(child_table, columns)
     end
 
@@ -221,8 +219,14 @@ module PgHaMigrations::SafeStatements
     end
 
     child_indexes.each do |child_index|
-      # CREATE INDEX CONCURRENTLY ON child_table
-      safe_add_concurrent_index(
+      add_index_method = if child_index.table.natively_partitioned?
+        :safe_add_concurrent_partitioned_index
+      else
+        :safe_add_concurrent_index
+      end
+
+      send(
+        add_index_method,
         child_index.table.fully_qualified_name,
         columns,
         name: child_index.name,
@@ -490,7 +494,6 @@ module PgHaMigrations::SafeStatements
       end
     end.join(".")
   end
-
 
   def _per_migration_caller
     @_per_migration_caller ||= Kernel.caller
