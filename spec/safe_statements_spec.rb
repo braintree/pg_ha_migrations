@@ -1319,10 +1319,40 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
             expect(ActiveRecord::Base.connection).to receive(:select_value).with(/SELECT EXISTS/).once.and_call_original
+            expect(ActiveRecord::Base.connection).to_not receive(:select_value).with(/pg_total_relation_size/)
 
             expect do
               test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" has rows. Please use safe_add_concurrent_index instead.")
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" has rows")
+
+            indexes = ActiveRecord::Base.connection.indexes("foos")
+            expect(indexes).to be_empty
+          end
+
+          it "raises error when table is larger than small table threshold" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_index_on_empty_table :foos, [:bar]
+              end
+            end
+
+            stub_const("PgHaMigrations::SMALL_TABLE_THRESHOLD_BYTES", 1.kilobyte)
+
+            allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/SELECT EXISTS/).once.and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/pg_total_relation_size/).once.and_call_original
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" is larger than 1024 bytes")
 
             indexes = ActiveRecord::Base.connection.indexes("foos")
             expect(indexes).to be_empty
@@ -1345,6 +1375,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/pg_total_relation_size/).once.and_call_original
             expect(ActiveRecord::Base.connection).to receive(:select_value).with(/SELECT EXISTS/).twice.and_wrap_original do |m, *args|
               m.call(*args).tap do
                 ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
@@ -1353,7 +1384,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect do
               test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" has rows. Please use safe_add_concurrent_index instead.")
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" has rows")
 
             indexes = ActiveRecord::Base.connection.indexes("foos")
             expect(indexes).to be_empty
@@ -4412,6 +4443,134 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
               end.not_to make_database_queries(matching: /lock_timeout/i)
             end
+          end
+        end
+
+        describe "ensure_small_table!" do
+          it "does not raise error when empty: false and table is below threshold and has rows" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+
+                unsafe_execute "INSERT INTO foos DEFAULT VALUES"
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                ensure_small_table! :foos
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to_not receive(:select_value).with(/SELECT EXISTS/)
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/pg_total_relation_size/).once.and_call_original
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise error when empty: true and table is below threshold and is empty" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                ensure_small_table! :foos, empty: true
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/SELECT EXISTS/).once.and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/pg_total_relation_size/).once.and_call_original
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "raises error when empty: true and table has rows" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+
+                unsafe_execute "INSERT INTO foos DEFAULT VALUES"
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                ensure_small_table! :foos, empty: true
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/SELECT EXISTS/).once.and_call_original
+            expect(ActiveRecord::Base.connection).to_not receive(:select_value).with(/pg_total_relation_size/)
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" has rows")
+          end
+
+          it "raises error when empty: true and table is above threshold and is empty" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                ensure_small_table! :foos, empty: true, threshold: 1.kilobyte
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/SELECT EXISTS/).once.and_call_original
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/pg_total_relation_size/).once.and_call_original
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" is larger than 1024 bytes")
+          end
+
+          it "raises error when empty: false and table is above threshold and has rows" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+
+                unsafe_execute "INSERT INTO foos DEFAULT VALUES"
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                ensure_small_table! :foos, threshold: 1.kilobyte
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
+            expect(ActiveRecord::Base.connection).to_not receive(:select_value).with(/SELECT EXISTS/)
+            expect(ActiveRecord::Base.connection).to receive(:select_value).with(/pg_total_relation_size/).once.and_call_original
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, "Table \"foos\" is larger than 1024 bytes")
           end
         end
 

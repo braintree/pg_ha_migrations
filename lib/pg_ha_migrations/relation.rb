@@ -96,6 +96,19 @@ module PgHaMigrations
 
       tables
     end
+
+    def has_rows?
+      connection.select_value("SELECT EXISTS (SELECT 1 FROM #{fully_qualified_name} LIMIT 1)")
+    end
+
+    def total_bytes
+      connection.select_value(<<~SQL)
+        SELECT pg_total_relation_size(pg_class.oid)
+        FROM pg_class, pg_namespace
+        WHERE pg_class.relname = #{connection.quote(name)}
+          AND pg_namespace.nspname = #{connection.quote(schema)}
+      SQL
+    end
   end
 
   class Index < Relation

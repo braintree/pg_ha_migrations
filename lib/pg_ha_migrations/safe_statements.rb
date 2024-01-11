@@ -1,14 +1,4 @@
 module PgHaMigrations::SafeStatements
-  PARTITION_TYPES = %i[range list hash]
-
-  PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
-    infinite_time_partitions
-    inherit_privileges
-    premake
-    retention
-    retention_keep_table
-  ]
-
   def safe_added_columns_without_default_value
     @safe_added_columns_without_default_value ||= []
   end
@@ -160,11 +150,11 @@ module PgHaMigrations::SafeStatements
     end
 
     # Avoids taking out an unnecessary SHARE lock if the table does have data
-    _ensure_empty_table!(table)
+    ensure_small_table!(table, empty: true)
 
     safely_acquire_lock_for_table(table, mode: :share) do
       # Ensure data wasn't written in the split second after the first check
-      _ensure_empty_table!(table)
+      ensure_small_table!(table, empty: true)
 
       unsafe_add_index(table, columns, **options)
     end
@@ -323,8 +313,8 @@ module PgHaMigrations::SafeStatements
   def safe_create_partitioned_table(table, partition_key:, type:, infer_primary_key: nil, **options, &block)
     raise ArgumentError, "Expected <partition_key> to be present" unless partition_key.present?
 
-    unless PARTITION_TYPES.include?(type)
-      raise ArgumentError, "Expected <type> to be symbol in #{PARTITION_TYPES} but received #{type.inspect}"
+    unless PgHaMigrations::PARTITION_TYPES.include?(type)
+      raise ArgumentError, "Expected <type> to be symbol in #{PgHaMigrations::PARTITION_TYPES} but received #{type.inspect}"
     end
 
     if ActiveRecord::Base.connection.postgresql_version < 10_00_00
@@ -463,7 +453,7 @@ module PgHaMigrations::SafeStatements
   end
 
   def unsafe_partman_update_config(table, **options)
-    invalid_options = options.keys - PARTMAN_UPDATE_CONFIG_OPTIONS
+    invalid_options = options.keys - PgHaMigrations::PARTMAN_UPDATE_CONFIG_OPTIONS
 
     raise ArgumentError, "Unrecognized argument(s): #{invalid_options}" unless invalid_options.empty?
 
@@ -523,14 +513,6 @@ module PgHaMigrations::SafeStatements
 
   def _type_is_enum(type)
     ActiveRecord::Base.connection.select_values("SELECT typname FROM pg_type JOIN pg_enum ON pg_type.oid = pg_enum.enumtypid").include?(type.to_s)
-  end
-
-  def _ensure_empty_table!(table)
-    table = PgHaMigrations::Table.from_table_name(table)
-
-    if connection.select_value("SELECT EXISTS (SELECT 1 FROM #{table.fully_qualified_name} LIMIT 1)")
-      raise PgHaMigrations::InvalidMigrationError, "Table #{table.inspect} has rows. Please use safe_add_concurrent_index instead."
-    end
   end
 
   def migrate(direction)
@@ -653,6 +635,18 @@ module PgHaMigrations::SafeStatements
           raise e
         end
       end
+    end
+  end
+
+  def ensure_small_table!(table, empty: false, threshold: PgHaMigrations::SMALL_TABLE_THRESHOLD_BYTES)
+    table = PgHaMigrations::Table.from_table_name(table)
+
+    if empty && table.has_rows?
+      raise PgHaMigrations::InvalidMigrationError, "Table #{table.inspect} has rows"
+    end
+
+    if table.total_bytes > threshold
+      raise PgHaMigrations::InvalidMigrationError, "Table #{table.inspect} is larger than #{threshold} bytes"
     end
   end
 end

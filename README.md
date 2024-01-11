@@ -484,6 +484,22 @@ Set maintenance work mem.
 safe_set_maintenance_work_mem_gb 1
 ```
 
+#### ensure\_small\_table!
+
+Ensure a table on disk is below the default threshold (10 megabytes).
+This will raise an error if the table is too large.
+
+```ruby
+ensure_small_table! :table
+```
+
+Ensure a table on disk is below a custom threshold and is empty.
+This will raise an error if the table is too large and/or contains data.
+
+```ruby
+ensure_small_table! :table, empty: true, threshold: 100.megabytes
+```
+
 ### Configuration
 
 The gem can be configured in an initializer.
