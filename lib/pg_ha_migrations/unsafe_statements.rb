@@ -80,6 +80,16 @@ module PgHaMigrations::UnsafeStatements
       raise PgHaMigrations::InvalidMigrationError, "ActiveRecord drops the :opclass option when supplying a string containing an expression or list of columns; instead either supply an array of columns or include the opclass in the string for each column"
     end
 
+    validated_table = PgHaMigrations::Table.from_table_name(table)
+
+    validated_index = if options[:name]
+      PgHaMigrations::Index.new(options[:name], validated_table)
+    else
+      PgHaMigrations::Index.from_table_and_columns(validated_table, column_names)
+    end
+
+    options[:name] = validated_index.name
+
     execute_ancestor_statement(:add_index, table, column_names, **options)
   end
 
