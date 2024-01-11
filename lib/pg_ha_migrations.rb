@@ -3,6 +3,7 @@ require "rails"
 require "active_record"
 require "active_record/migration"
 require "active_record/connection_adapters/postgresql/utils"
+require "active_support/core_ext/numeric/bytes"
 require "relation_to_struct"
 require "ruby2_keywords"
 
@@ -31,7 +32,7 @@ module PgHaMigrations
 
   LOCK_TIMEOUT_SECONDS = 5
   LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER = 5
-  SMALL_TABLE_THRESHOLD_BYTES = 1_048_576 # 10 megabytes
+  SMALL_TABLE_THRESHOLD_BYTES = 10.megabytes
 
   PARTITION_TYPES = %i[range list hash]
 
