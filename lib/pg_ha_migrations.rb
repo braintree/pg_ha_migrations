@@ -3,6 +3,7 @@ require "rails"
 require "active_record"
 require "active_record/migration"
 require "active_record/connection_adapters/postgresql/utils"
+require "active_support/core_ext/numeric/bytes"
 require "relation_to_struct"
 require "ruby2_keywords"
 
@@ -31,6 +32,17 @@ module PgHaMigrations
 
   LOCK_TIMEOUT_SECONDS = 5
   LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER = 5
+  SMALL_TABLE_THRESHOLD_BYTES = 10.megabytes
+
+  PARTITION_TYPES = %i[range list hash]
+
+  PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
+    infinite_time_partitions
+    inherit_privileges
+    premake
+    retention
+    retention_keep_table
+  ]
 
   # Safe versus unsafe in this context specifically means the following:
   # - Safe operations will not block for long periods of time.

@@ -171,6 +171,14 @@ Unsafely make a column not nullable.
 unsafe_make_column_not_nullable :table, :column
 ```
 
+#### safe\_add\_index\_on\_empty\_table
+
+Safely add an index on a table with zero rows. This will raise an error if the table contains data.
+
+```ruby
+safe_add_index_on_empty_table :table, :column
+```
+
 #### safe\_add\_concurrent\_index
 
 Add an index concurrently.
@@ -474,6 +482,22 @@ Set maintenance work mem.
 
 ```ruby
 safe_set_maintenance_work_mem_gb 1
+```
+
+#### ensure\_small\_table!
+
+Ensure a table on disk is below the default threshold (10 megabytes).
+This will raise an error if the table is too large.
+
+```ruby
+ensure_small_table! :table
+```
+
+Ensure a table on disk is below a custom threshold and is empty.
+This will raise an error if the table is too large and/or contains data.
+
+```ruby
+ensure_small_table! :table, empty: true, threshold: 100.megabytes
 ```
 
 ### Configuration

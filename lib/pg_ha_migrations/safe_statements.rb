@@ -1,14 +1,4 @@
 module PgHaMigrations::SafeStatements
-  PARTITION_TYPES = %i[range list hash]
-
-  PARTMAN_UPDATE_CONFIG_OPTIONS = %i[
-    infinite_time_partitions
-    inherit_privileges
-    premake
-    retention
-    retention_keep_table
-  ]
-
   def safe_added_columns_without_default_value
     @safe_added_columns_without_default_value ||= []
   end
@@ -151,6 +141,22 @@ module PgHaMigrations::SafeStatements
   def unsafe_make_column_not_nullable(table, column, options={}) # options arg is only present for backwards compatiblity
     safely_acquire_lock_for_table(table) do
       unsafe_execute "ALTER TABLE #{table} ALTER COLUMN #{column} SET NOT NULL"
+    end
+  end
+
+  def safe_add_index_on_empty_table(table, columns, options={})
+    if options[:algorithm] == :concurrently
+      raise ArgumentError, "Cannot call safe_add_index_on_empty_table with :algorithm => :concurrently"
+    end
+
+    # Avoids taking out an unnecessary SHARE lock if the table does have data
+    ensure_small_table!(table, empty: true)
+
+    safely_acquire_lock_for_table(table, mode: :share) do
+      # Ensure data wasn't written in the split second after the first check
+      ensure_small_table!(table, empty: true)
+
+      unsafe_add_index(table, columns, **options)
     end
   end
 
@@ -307,8 +313,8 @@ module PgHaMigrations::SafeStatements
   def safe_create_partitioned_table(table, partition_key:, type:, infer_primary_key: nil, **options, &block)
     raise ArgumentError, "Expected <partition_key> to be present" unless partition_key.present?
 
-    unless PARTITION_TYPES.include?(type)
-      raise ArgumentError, "Expected <type> to be symbol in #{PARTITION_TYPES} but received #{type.inspect}"
+    unless PgHaMigrations::PARTITION_TYPES.include?(type)
+      raise ArgumentError, "Expected <type> to be symbol in #{PgHaMigrations::PARTITION_TYPES} but received #{type.inspect}"
     end
 
     if ActiveRecord::Base.connection.postgresql_version < 10_00_00
@@ -447,7 +453,7 @@ module PgHaMigrations::SafeStatements
   end
 
   def unsafe_partman_update_config(table, **options)
-    invalid_options = options.keys - PARTMAN_UPDATE_CONFIG_OPTIONS
+    invalid_options = options.keys - PgHaMigrations::PARTMAN_UPDATE_CONFIG_OPTIONS
 
     raise ArgumentError, "Unrecognized argument(s): #{invalid_options}" unless invalid_options.empty?
 
@@ -629,6 +635,18 @@ module PgHaMigrations::SafeStatements
           raise e
         end
       end
+    end
+  end
+
+  def ensure_small_table!(table, empty: false, threshold: PgHaMigrations::SMALL_TABLE_THRESHOLD_BYTES)
+    table = PgHaMigrations::Table.from_table_name(table)
+
+    if empty && table.has_rows?
+      raise PgHaMigrations::InvalidMigrationError, "Table #{table.inspect} has rows"
+    end
+
+    if table.total_bytes > threshold
+      raise PgHaMigrations::InvalidMigrationError, "Table #{table.inspect} is larger than #{threshold} bytes"
     end
   end
 end
