@@ -4,10 +4,6 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_create_table(table, options={}, &block)
-    if options[:force]
-      raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
-    end
-
     unsafe_create_table(table, options, &block)
   end
 

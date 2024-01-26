@@ -153,7 +153,7 @@ safe_change_column_default :table, :column, -> { "NOW()" }
 safe_change_column_default :table, :column, -> { "'NOW()'" }
 ```
 
-Note: On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = true` [in your configuration initializer](#configuration).
+Note: On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = false` [in your configuration initializer](#configuration).
 
 #### safe\_make\_column\_nullable
 

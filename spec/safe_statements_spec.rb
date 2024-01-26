@@ -297,201 +297,30 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        context "when not configured to disable default migration methods" do
-          before(:each) do
-            allow(PgHaMigrations.config)
-              .to receive(:disable_default_migration_methods)
-              .and_return(false)
-          end
-
-          it "does not raise when using default create_table method" do
-            migration = Class.new(migration_klass) do
-              def up
-                create_table :foos
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default add_column method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                add_column :foos, :bar, :text
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default change_table method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                change_table(:foos) { }
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default drop_table method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                drop_table :foos
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default rename_table method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                rename_table :foos, :bars
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default rename_column method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                safe_add_column :foos, :bar, :text
-                rename_column :foos, :bar, :baz
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default change_column method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                safe_add_column :foos, :bar, :text
-                change_column :foos, :bar, :string
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default change_column_null method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                safe_add_column :foos, :bar, :text
-                change_column_null :foos, :bar, false
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default remove_column method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                safe_add_column :foos, :bar, :text
-                remove_column :foos, :bar, :text
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default add_index method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                safe_add_column :foos, :bar, :text
-                add_index :foos, :bar
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default add_foreign_key method" do
-            migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                safe_create_table :bars
-                safe_add_column :foos, :bar_id, :integer
-                add_foreign_key :foos, :bars, :foreign_key => :bar_id
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-
-          it "does not raise when using default execute method" do
-            migration = Class.new(migration_klass) do
-              def up
-                execute "SELECT current_date"
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
-          end
-        end
-
         describe "disabling `force: true`" do
-          it "is allowed when config.allow_force_create_table = true" do
-            allow(PgHaMigrations.config)
-              .to receive(:allow_force_create_table)
-              .and_return(true)
-
+          it "raises in safe method" do
             migration = Class.new(migration_klass) do
               def up
-                unsafe_create_table :items, :force => true do |t|
-                  # Empty.
+                safe_create_table :items do |t|
+                  t.integer :original_column
+                end
+                safe_create_table :items, :force => true do |t|
+                  t.integer :new_column
                 end
               end
             end
 
             expect do
               migration.suppress_messages { migration.migrate(:up) }
-            end.to_not raise_error
+            end.to raise_error(PgHaMigrations::UnsafeMigrationError, /force is not safe/i)
 
-            expect(ActiveRecord::Base.connection.tables).to include("items")
+            columns = ActiveRecord::Base.connection.columns("items")
+            column_names = columns.map(&:name)
+            expect(column_names).to include("original_column")
+            expect(column_names).not_to include("new_column")
           end
 
-          it "raises when config.allow_force_create_table = false" do
-            allow(PgHaMigrations.config)
-              .to receive(:allow_force_create_table)
-              .and_return(false)
-
+          it "raises in unsafe method" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :items do |t|
@@ -511,6 +340,28 @@ RSpec.describe PgHaMigrations::SafeStatements do
             column_names = columns.map(&:name)
             expect(column_names).to include("original_column")
             expect(column_names).not_to include("new_column")
+          end
+
+          it "does not raise in raw method" do
+            migration = Class.new(migration_klass) do
+              def up
+                raw_create_table :items do |t|
+                  t.integer :original_column
+                end
+                raw_create_table :items, :force => true do |t|
+                  t.integer :new_column
+                end
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+
+            columns = ActiveRecord::Base.connection.columns("items")
+            column_names = columns.map(&:name)
+            expect(column_names).to_not include("original_column")
+            expect(column_names).to include("new_column")
           end
         end
       end
@@ -568,37 +419,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect(updated_at_column.sql_type).to match(/timestamp(\(6\))? without time zone/)
             expect(text_column.sql_type).to eq("text")
-          end
-
-          it "disallows `force: true` regardless of config.allow_force_create_table" do
-            aggregate_failures do
-              [true, false].each do |config_value|
-                allow(PgHaMigrations.config)
-                  .to receive(:allow_force_create_table)
-                  .and_return(config_value)
-
-                migration = Class.new(migration_klass) do
-                  def up
-                    unsafe_execute "DROP TABLE IF EXISTS items" # We're in a loop in the test.
-                    safe_create_table :items do |t|
-                      t.integer :original_column
-                    end
-                    safe_create_table :items, :force => true do |t|
-                      t.integer :new_column
-                    end
-                  end
-                end
-
-                expect do
-                  migration.suppress_messages { migration.migrate(:up) }
-                end.to raise_error(PgHaMigrations::UnsafeMigrationError, /force is not safe/i)
-
-                columns = ActiveRecord::Base.connection.columns("items")
-                column_names = columns.map(&:name)
-                expect(column_names).to include("original_column")
-                expect(column_names).not_to include("new_column")
-              end
-            end
           end
 
           it "doesn't output say_with_time for adapter_name" do
@@ -1018,6 +838,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           describe "when not configured to disallow two-step new column and adding default" do
+            before(:each) do
+              allow(PgHaMigrations.config)
+                .to receive(:prefer_single_step_column_addition_with_default)
+                .and_return(false)
+            end
+
             it "allows setting a constant default value on Postgres 11+ when the column was added in the same migration" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
@@ -1034,12 +860,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           describe "when configured to disallow two-step new column and adding default" do
-            before(:each) do
-              allow(PgHaMigrations.config)
-                .to receive(:prefer_single_step_column_addition_with_default)
-                .and_return(true)
-            end
-
             it "disallows setting a constant default value on Postgres 11+ when the column was added in the same migration" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do

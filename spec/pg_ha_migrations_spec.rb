@@ -14,59 +14,17 @@ RSpec.describe PgHaMigrations do
       PgHaMigrations.instance_variable_set(:@config, nil)
     end
 
-    context "disable_default_migration_methods" do
-      it "is set to true by default" do
-        expect(PgHaMigrations.config.disable_default_migration_methods).to be(true)
-      end
-
-      it "can be overriden to false" do
-        PgHaMigrations.configure do |config|
-          config.disable_default_migration_methods = false
-        end
-
-        expect(PgHaMigrations.config.disable_default_migration_methods).to be(false)
-      end
-    end
-
-    context "check_for_dependent_objects" do
-      it "is set to false by default" do
-        expect(PgHaMigrations.config.check_for_dependent_objects).to be(false)
-      end
-
-      it "can be overriden to true" do
-        PgHaMigrations.configure do |config|
-          config.check_for_dependent_objects = true
-        end
-
-        expect(PgHaMigrations.config.check_for_dependent_objects).to be(true)
-      end
-    end
-
-    context "allow_force_create_table" do
-      it "is set to true by default" do
-        expect(PgHaMigrations.config.allow_force_create_table).to be(true)
-      end
-
-      it "can be overriden to false" do
-        PgHaMigrations.configure do |config|
-          config.allow_force_create_table = false
-        end
-
-        expect(PgHaMigrations.config.allow_force_create_table).to be(false)
-      end
-    end
-
     context "prefer_single_step_column_addition_with_default" do
-      it "is set to false by default" do
-        expect(PgHaMigrations.config.prefer_single_step_column_addition_with_default).to be(false)
+      it "is set to true by default" do
+        expect(PgHaMigrations.config.prefer_single_step_column_addition_with_default).to be(true)
       end
 
-      it "can be overriden to true" do
+      it "can be overriden to false" do
         PgHaMigrations.configure do |config|
-          config.prefer_single_step_column_addition_with_default = true
+          config.prefer_single_step_column_addition_with_default = false
         end
 
-        expect(PgHaMigrations.config.prefer_single_step_column_addition_with_default).to be(true)
+        expect(PgHaMigrations.config.prefer_single_step_column_addition_with_default).to be(false)
       end
     end
 
