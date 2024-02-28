@@ -68,7 +68,7 @@ When `unsafe_*` migration methods support checks of this type you can bypass the
 
 Similarly we believe the `force: true` option to ActiveRecord's `create_table` method is always unsafe, and therefore we disallow it even when calling `unsafe_create_table`. This option won't be enabled by default until 2.0, but you can opt-in by setting `config.allow_force_create_table = false` [in your configuration initializer](#configuration).
 
-[Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22). For that reason, this gem [disables DDL transactions](./lib/pg_ha_migrations/hacks/disable_ddl_transaction.rb) by default. You can change this by resetting `ActiveRecord::Migration.disable_ddl_transaction` in your application.
+[Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22). For that reason, this gem [disables DDL transactions](./lib/pg_ha_migrations/hacks/disable_ddl_transaction.rb) by default. You can change this by setting by setting `config.always_disable_ddl_transactions = false` [in your configuration initializer](#configuration).
 
 The following functionality is currently unsupported:
 
@@ -517,6 +517,7 @@ end
 - `prefer_single_step_column_addition_with_default`: If true, raise an error when adding a column and separately setting a constant default value for that column in the same migration. Default: `false`
 - `allow_force_create_table`: If false, the `force: true` option to ActiveRecord's `create_table` method is disallowed. Default: `true`
 - `infer_primary_key_on_partitioned_tables`: If true, the primary key for partitioned tables will be inferred on PostgreSQL 11+ databases (identifier column + partition key columns). Default: `true`
+- `always_disable_ddl_transactions`: If false, migrations will follow the rails default and run in a transaction. Default: `true`
 
 ### Rake Tasks
 
