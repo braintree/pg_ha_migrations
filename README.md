@@ -68,7 +68,7 @@ When `unsafe_*` migration methods support checks of this type you can bypass the
 
 Similarly we believe the `force: true` option to ActiveRecord's `create_table` method is always unsafe, and therefore we disallow it even when calling `unsafe_create_table`. This option won't be enabled by default until 2.0, but you can opt-in by setting `config.allow_force_create_table = false` [in your configuration initializer](#configuration).
 
-[Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22). For that reason, this gem [disables DDL transactions](./lib/pg_ha_migrations/hacks/disable_ddl_transaction.rb) by default. You can change this by setting by setting `config.disable_ddl_transactions_by_default = false` [in your configuration initializer](#configuration).
+[Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22). For that reason, this gem [disables DDL transactions](./lib/pg_ha_migrations/hacks/disable_ddl_transaction.rb) by default. You can change this by setting by setting `config.disable_ddl_transactions_by_default = false` [in your configuration initializer](#configuration). Note that making this change will require you to manual disable transactions by calling `disable_ddl_transaction!` in the migration file for certain operations, for instance when running `safe_add_concurrent_index`.
 
 The following functionality is currently unsupported:
 
