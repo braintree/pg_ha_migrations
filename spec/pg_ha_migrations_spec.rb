@@ -28,17 +28,17 @@ RSpec.describe PgHaMigrations do
       end
     end
 
-    context "always_disable_ddl_transactions" do
+    context "disable_ddl_transactions_by_default" do
       it "is set to true by default" do
-        expect(PgHaMigrations.config.always_disable_ddl_transactions).to be(true)
+        expect(PgHaMigrations.config.disable_ddl_transactions_by_default).to be(true)
       end
 
       it "can be overriden to false" do
         PgHaMigrations.configure do |config|
-          config.always_disable_ddl_transactions = false
+          config.disable_ddl_transactions_by_default = false
         end
 
-        expect(PgHaMigrations.config.always_disable_ddl_transactions).to be(false)
+        expect(PgHaMigrations.config.disable_ddl_transactions_by_default).to be(false)
       end
     end
 

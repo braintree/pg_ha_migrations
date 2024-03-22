@@ -7,20 +7,20 @@ RSpec.describe PgHaMigrations::ActiveRecordHacks::DisableDdlTransaction do
     end
   end
 
-  describe 'always_disable_ddl_transactions set to false' do
+  describe 'disable_ddl_transactions_by_default set to false' do
     before do
       PgHaMigrations.configure do |config|
-        config.always_disable_ddl_transactions = false
+        config.disable_ddl_transactions_by_default = false
       end
     end
 
     after do
       PgHaMigrations.configure do |config|
-        config.always_disable_ddl_transactions = true
+        config.disable_ddl_transactions_by_default = true
       end
     end
 
-    it 'sets always_disable_ddl_transactions to false' do
+    it 'sets disable_ddl_transactions_by_default to false' do
       expect(ActiveRecord::Migration.disable_ddl_transaction).to eq(false)
     end
   end
