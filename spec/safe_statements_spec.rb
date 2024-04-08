@@ -654,7 +654,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           [:string, :text, :enum, :binary].each do |type|
-            it "allows a default value that looks like an expression for the #{type.inspect} type on Postgres 11+" do
+            it "allows a default value that looks like an expression for the #{type.inspect} type" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
                   unsafe_create_table :foos
@@ -670,20 +670,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
               end
 
-              if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-                migration.suppress_messages { migration.migrate(:up) }
+              migration.suppress_messages { migration.migrate(:up) }
 
-                # Handle binary columns being transported, but not stored, as hex.
-                expected_value = type == :binary ? "\\x4e4f572829" : "NOW()"
-                expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq(expected_value)
+              # Handle binary columns being transported, but not stored, as hex.
+              expected_value = type == :binary ? "\\x4e4f572829" : "NOW()"
+              expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq(expected_value)
 
-                ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
-                expect(ActiveRecord::Base.connection.select_values("SELECT bar FROM foos")).to all(eq(expected_value))
-              else
-                expect do
-                  migration.suppress_messages { migration.migrate(:up) }
-                end.to raise_error PgHaMigrations::UnsafeMigrationError
-              end
+              ActiveRecord::Base.connection.execute("INSERT INTO foos DEFAULT VALUES")
+              expect(ActiveRecord::Base.connection.select_values("SELECT bar FROM foos")).to all(eq(expected_value))
             end
           end
 
@@ -713,7 +707,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error PgHaMigrations::UnsafeMigrationError
           end
 
-          it "allows setting null => false (with a default) on Postgres 11+ and forbids it otherwise" do
+          it "allows setting null => false (with a default)" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos
@@ -722,16 +716,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-              migration.suppress_messages { migration.migrate(:up) }
-              aggregate_failures do
-                expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
-                expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
-              end
-            else
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error PgHaMigrations::UnsafeMigrationError
+            migration.suppress_messages { migration.migrate(:up) }
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq("baz")
+              expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
             end
           end
 
@@ -1018,7 +1006,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           describe "when not configured to disallow two-step new column and adding default" do
-            it "allows setting a constant default value on Postgres 11+ when the column was added in the same migration" do
+            it "allows setting a constant default value when the column was added in the same migration" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
                   unsafe_create_table :foos
@@ -1040,7 +1028,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 .and_return(true)
             end
 
-            it "disallows setting a constant default value on Postgres 11+ when the column was added in the same migration" do
+            it "disallows setting a constant default value when the column was added in the same migration" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
                   unsafe_create_table :foos
@@ -1049,15 +1037,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
               end
 
-              if ActiveRecord::Base.connection.postgresql_version >= 11_00_00
-                expect do
-                  migration.suppress_messages { migration.migrate(:up) }
-                end.to raise_error PgHaMigrations::BestPracticeError
-              else
-                expect do
-                  migration.suppress_messages { migration.migrate(:up) }
-                end.not_to raise_error
-              end
+              expect do
+                migration.suppress_messages { migration.migrate(:up) }
+              end.to raise_error PgHaMigrations::BestPracticeError
             end
           end
         end
