@@ -2076,7 +2076,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect(ActiveRecord::Base.connection.indexes(:foos3_child2)).to be_empty
 
-              expect(ActiveRecord::Base.pluck_from_sql("SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid")).to contain_exactly(
+              expect(ActiveRecord::Base.pluck_from_sql("SELECT indexrelid::regclass::text FROM pg_index WHERE NOT indisvalid")).to contain_exactly(
                 "index_foos3_on_updated_at",
               )
             end
@@ -2131,7 +2131,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               expect(ActiveRecord::Base.connection.indexes(:foos3_sub_child2)).to be_empty
 
-              expect(ActiveRecord::Base.pluck_from_sql("SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid")).to contain_exactly(
+              expect(ActiveRecord::Base.pluck_from_sql("SELECT indexrelid::regclass::text FROM pg_index WHERE NOT indisvalid")).to contain_exactly(
                 "index_foos3_on_updated_at",
                 "index_foos3_sub_on_updated_at",
               )
