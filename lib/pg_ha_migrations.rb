@@ -14,6 +14,7 @@ module PgHaMigrations
     :allow_force_create_table,
     :prefer_single_step_column_addition_with_default,
     :infer_primary_key_on_partitioned_tables,
+    :disable_ddl_transactions_by_default
   )
 
   def self.config
@@ -22,6 +23,7 @@ module PgHaMigrations
       false,
       true,
       false,
+      true,
       true
     )
   end
