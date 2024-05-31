@@ -466,6 +466,169 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        context "raw methods" do
+          it "does not raise when using raw_create_table method" do
+            migration = Class.new(migration_klass) do
+              def up
+                raw_create_table :foos
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_add_column method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                raw_add_column :foos, :bar, :text
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_change_table method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                raw_change_table(:foos) { }
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_drop_table method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                raw_drop_table :foos
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_rename_table method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                raw_rename_table :foos, :bars
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_rename_column method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+                raw_rename_column :foos, :bar, :baz
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_change_column method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+                raw_change_column :foos, :bar, :string
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_change_column_null method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+                raw_change_column_null :foos, :bar, false
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_remove_column method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+                raw_remove_column :foos, :bar, :text
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_add_index method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+                raw_add_index :foos, :bar
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_add_foreign_key method" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_create_table :bars
+                safe_add_column :foos, :bar_id, :integer
+                raw_add_foreign_key :foos, :bars, :foreign_key => :bar_id
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+
+          it "does not raise when using raw_execute method" do
+            migration = Class.new(migration_klass) do
+              def up
+                raw_execute "SELECT current_date"
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to_not raise_error
+          end
+        end
+
         describe "disabling `force: true`" do
           it "is allowed when config.allow_force_create_table = true" do
             allow(PgHaMigrations.config)
@@ -1006,6 +1169,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           describe "when not configured to disallow two-step new column and adding default" do
+            before(:each) do
+              allow(PgHaMigrations.config)
+                .to receive(:prefer_single_step_column_addition_with_default)
+                .and_return(false)
+            end
+
             it "allows setting a constant default value when the column was added in the same migration" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
@@ -1022,12 +1191,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           describe "when configured to disallow two-step new column and adding default" do
-            before(:each) do
-              allow(PgHaMigrations.config)
-                .to receive(:prefer_single_step_column_addition_with_default)
-                .and_return(true)
-            end
-
             it "disallows setting a constant default value when the column was added in the same migration" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
