@@ -182,7 +182,10 @@ RSpec.describe PgHaMigrations do
           # Because our method now lives outside of the inheritance
           # hierarchy we can go back to using RSpec's method mocking.
           expect(ActiveRecord::Base.connection).to receive(:pg_ha_migrations_test_method).and_return("sentinel_value")
-          expect(subclass.new.unsafe_pg_ha_migrations_test_method).to eq("sentinel_value")
+
+          subclass.suppress_messages do
+            expect(subclass.new.unsafe_pg_ha_migrations_test_method).to eq("sentinel_value")
+          end
         end
       end
     end
