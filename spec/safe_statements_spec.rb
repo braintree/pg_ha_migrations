@@ -100,6 +100,78 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end.not_to raise_error
       end
 
+      it "is configured to run migrations non-transactionally by default" do
+        migration_dir = Dir.mktmpdir
+
+        File.write("#{migration_dir}/0_create_foos.rb", <<~RUBY)
+          class CreateFoos < #{migration_klass}
+            def up
+              safe_create_table :foos
+
+              raise "boom"
+            end
+          end
+        RUBY
+
+        aggregate_failures do
+          expect do
+            migration_klass.suppress_messages do
+              # This exercises the logic in ActiveRecord::Migrator
+              # to optionally wrap migrations in a transaction.
+              #
+              # Our other tests simply run test_migration.migrate(:up)
+              # which completely bypasses this logic.
+              ActiveRecord::MigrationContext.new(
+                migration_dir,
+                ActiveRecord::Base.connection.schema_migration,
+              ).migrate
+            end
+          end.to raise_error(StandardError, /An error has occurred, all later migrations canceled/)
+
+          expect(ActiveRecord::Base.connection.table_exists?(:foos)).to eq(true)
+        end
+      ensure
+        FileUtils.remove_entry(migration_dir)
+        Object.send(:remove_const, :CreateFoos) if defined?(CreateFoos)
+      end
+
+      it "can be configured to run migrations transactionally" do
+        migration_dir = Dir.mktmpdir
+
+        File.write("#{migration_dir}/0_create_foos.rb", <<~RUBY)
+          class CreateFoos < #{migration_klass}
+            self.disable_ddl_transaction = false
+
+            def up
+              safe_create_table :foos
+
+              raise "boom"
+            end
+          end
+        RUBY
+
+        aggregate_failures do
+          expect do
+            migration_klass.suppress_messages do
+              # This exercises the logic in ActiveRecord::Migrator
+              # to optionally wrap migrations in a transaction.
+              #
+              # Our other tests simply run test_migration.migrate(:up)
+              # which completely bypasses this logic.
+              ActiveRecord::MigrationContext.new(
+                migration_dir,
+                ActiveRecord::Base.connection.schema_migration,
+              ).migrate
+            end
+          end.to raise_error(StandardError, /An error has occurred, this and all later migrations canceled/)
+
+          expect(ActiveRecord::Base.connection.table_exists?(:foos)).to eq(false)
+        end
+      ensure
+        FileUtils.remove_entry(migration_dir)
+        Object.send(:remove_const, :CreateFoos) if defined?(CreateFoos)
+      end
+
       it "raises when database adapter is not PostgreSQL" do
         allow(ActiveRecord::Base.connection).to receive(:adapter_name).and_return("SQLite")
 
