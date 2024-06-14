@@ -30,7 +30,31 @@ Or install it yourself as:
 
     $ gem install pg_ha_migrations
 
-## Usage
+## Migration Safety
+
+There are two major classes of concerns we try to handle in the API:
+
+- Database safety (e.g., long-held locks)
+- Application safety (e.g., dropping columns the app uses)
+
+### Migration Method Renaming
+
+We rename migration methods with prefixes to explicitly denote their safety level:
+
+- `safe_*`: These methods check for both application and database safety concerns, prefer concurrent operations where available, set low lock timeouts where appropriate, and decompose operations into multiple safe steps.
+- `unsafe_*`: These methods are generally a direct dispatch to the native ActiveRecord migration method.
+
+Calling the original migration methods without a prefix will raise an error.
+
+The API is designed to be explicit yet remain flexible. There may be situations where invoking the `unsafe_*` method is preferred (or the only option available for definitionally unsafe operations).
+
+While `unsafe_*` methods were historically (through 1.0) pure wrappers for invoking the native ActiveRecord migration method, there is a class of problems that we can't handle easily without breaking that design rule a bit. For example, dropping a column is unsafe from an application perspective, so we make the application safety concerns explicit by using an `unsafe_` prefix. Using `unsafe_remove_column` calls out the need to audit the application to confirm the migration won't break the application. Because there are no safe alternatives we don't define a `safe_remove_column` analogue. However there are still conditions we'd like to assert before dropping a column. For example, dropping an unused column that's used in one or more indexes may be safe from an application perspective, but the cascading drop of the index won't use a `CONCURRENT` operation to drop the dependent indexes and is therefore unsafe from a database perspective.
+
+When `unsafe_*` migration methods support checks of this type you can bypass the checks by passing an `:allow_dependent_objects` key in the method's `options` hash containing an array of dependent object types you'd like to allow. Until 2.0 none of these checks will run by default, but you can opt-in by setting `config.check_for_dependent_objects = true` [in your configuration initializer](#configuration).a
+
+### Migration Method Arguments
+
+We believe the `force: true` option to ActiveRecord's `create_table` method is always unsafe because it's not possible to denote exactly how the current state will change. Therefore we disallow using `force: true` even when calling `unsafe_create_table`. This option won't be enabled by default until 2.0, but you can opt-in by setting `config.allow_force_create_table = false` [in your configuration initializer](#configuration).
 
 ### Rollback
 
@@ -46,40 +70,47 @@ end
 
 and never use `def change`. We believe that this is the only safe approach in production environments. For development environments we iterate by recreating the database from scratch every time we make a change.
 
-### Migrations
+### Transactional DDL
 
-There are two major classes of concerns we try to handle in the API:
+Individual DDL statements in PostgreSQL are transactional by default (as are all Postgres statements). Concurrent index creation and removal are two exceptions: these utility commands manage their own transaction state (and each uses multiple transactions to achieve the desired concurrency).
 
-- Database safety (e.g., long-held locks)
-- Application safety (e.g., dropping columns the app uses)
+We [disable ActiveRecord's DDL transactions](./lib/pg_ha_migrations/hacks/disable_ddl_transaction.rb) (which wrap the entire migration file in a transaction) by default for the following reasons:
 
-We rename migration methods with prefixes denoting their safety level:
+* [Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22).
+* Acquired locks are held until the end of the transaction.
+* Multiple locks creates the possibility of deadlocks.
+* Increased exposure to long waits:
+  * Each newly acquired lock has its own timeout applied (so total lock time is additive).
+  * [Safe lock acquisition](#safely_acquire_lock_for_table) (which is used in each migration method where locks will be acquired) can issue multiple lock attempts on lock timeouts (with sleep delays between attempts).
 
-- `safe_*`: These methods check for both application and database safety concerns, prefer concurrent operations where available, set low lock timeouts where appropriate, and decompose operations into multiple safe steps.
-- `unsafe_*`: These methods are generally a direct dispatch to the native ActiveRecord migration method.
+Because of the above issues attempting to re-enable transaction migrations forfeits many of the safety guarantees this library provides and may even break certain functionally. If you'd like to experiment with it anyway you can re-enable transactional migrations by adding `self.disable_ddl_transaction = false` to your migration class definition.
 
-Calling the original migration methods without a prefix will raise an error.
+## Usage
 
-The API is designed to be explicit yet remain flexible. There may be situations where invoking the `unsafe_*` method is preferred (or the only option available for definitionally unsafe operations).
-
-While `unsafe_*` methods were historically (through 1.0) pure wrappers for invoking the native ActiveRecord migration method, there is a class of problems that we can't handle easily without breaking that design rule a bit. For example, dropping a column is unsafe from an application perspective, so we make the application safety concerns explicit by using an `unsafe_` prefix. Using `unsafe_remove_column` calls out the need to audit the application to confirm the migration won't break the application. Because there are no safe alternatives we don't define a `safe_remove_column` analogue. However there are still conditions we'd like to assert before dropping a column. For example, dropping an unused column that's used in one or more indexes may be safe from an application perspective, but the cascading drop of the index won't use a `CONCURRENT` operation to drop the dependent indexes and is therefore unsafe from a database perspective.
-
-When `unsafe_*` migration methods support checks of this type you can bypass the checks by passing an `:allow_dependent_objects` key in the method's `options` hash containing an array of dependent object types you'd like to allow. Until 2.0 none of these checks will run by default, but you can opt-in by setting `config.check_for_dependent_objects = true` [in your configuration initializer](#configuration).
-
-Similarly we believe the `force: true` option to ActiveRecord's `create_table` method is always unsafe, and therefore we disallow it even when calling `unsafe_create_table`. This option won't be enabled by default until 2.0, but you can opt-in by setting `config.allow_force_create_table = false` [in your configuration initializer](#configuration).
-
-[Running multiple DDL statements inside a transaction acquires exclusive locks on all of the modified objects](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#cc22). For that reason, this gem [disables DDL transactions](./lib/pg_ha_migrations/hacks/disable_ddl_transaction.rb) by default. You can change this by resetting `ActiveRecord::Migration.disable_ddl_transaction` in your application.
+### Unsupported ActiveRecord Features
 
 The following functionality is currently unsupported:
 
-- Rollbacks
+- [Rollback methods in migrations](#rollback)
 - Generators
 - schema.rb
 
-Compatibility notes:
+### Compatibility Notes
 
 - While some features may work with other versions, this gem is currently tested against PostgreSQL 12+ and Partman 4.x
 - There is a [bug](https://github.com/rails/rails/pull/41490) in early versions of Rails 6.1 when using `algorithm: :concurrently`. To add / remove indexes concurrently, please upgrade to at least Rails 6.1.4.
+
+### Migration Methods
+
+#### safely\_acquire\_lock\_for\_table
+
+Acquires a lock on a table using the following algorithm:
+
+1. Verify that no long-running queries are using the table.
+  A. If long-running queries are currently using the table, sleep `PgHaMigrations::LOCK_TIMEOUT_SECONDS` and check again.
+2. If no long-running queries are currently using the table, optimistically attempt to lock the table (with a timeout of `PgHaMigrations::LOCK_TIMEOUT_SECONDS').
+  A. If the lock is not acquired, sleep `PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS`, and start again at step 1.
+3. If the lock is acquired, proceed to run the given block.
 
 #### safe\_create\_table
 
