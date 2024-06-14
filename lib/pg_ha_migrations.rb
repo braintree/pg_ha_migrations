@@ -19,9 +19,9 @@ module PgHaMigrations
   def self.config
     @config ||= Config.new(
       true,
-      false,
       true,
       false,
+      true,
       true
     )
   end

@@ -42,19 +42,20 @@ There are two major classes of concerns we try to handle in the API:
 We rename migration methods with prefixes to explicitly denote their safety level:
 
 - `safe_*`: These methods check for both application and database safety concerns, prefer concurrent operations where available, set low lock timeouts where appropriate, and decompose operations into multiple safe steps.
-- `unsafe_*`: These methods are generally a direct dispatch to the native ActiveRecord migration method.
+- `unsafe_*`: Using these methods is a signal that the DDL operation is not necessarily safe for a running application. They include basic safety features like safe lock acquisition and dependent object checking, but otherwise dispatch directly to the native ActiveRecord migration method.
+- `raw_*`: These methods are a direct dispatch to the native ActiveRecord migration method.
 
 Calling the original migration methods without a prefix will raise an error.
 
 The API is designed to be explicit yet remain flexible. There may be situations where invoking the `unsafe_*` method is preferred (or the only option available for definitionally unsafe operations).
 
-While `unsafe_*` methods were historically (through 1.0) pure wrappers for invoking the native ActiveRecord migration method, there is a class of problems that we can't handle easily without breaking that design rule a bit. For example, dropping a column is unsafe from an application perspective, so we make the application safety concerns explicit by using an `unsafe_` prefix. Using `unsafe_remove_column` calls out the need to audit the application to confirm the migration won't break the application. Because there are no safe alternatives we don't define a `safe_remove_column` analogue. However there are still conditions we'd like to assert before dropping a column. For example, dropping an unused column that's used in one or more indexes may be safe from an application perspective, but the cascading drop of the index won't use a `CONCURRENT` operation to drop the dependent indexes and is therefore unsafe from a database perspective.
+While `unsafe_*` methods were historically (before 2.0) pure wrappers for invoking the native ActiveRecord migration method, there is a class of problems that we can't handle easily without breaking that design rule a bit. For example, dropping a column is unsafe from an application perspective, so we make the application safety concerns explicit by using an `unsafe_` prefix. Using `unsafe_remove_column` calls out the need to audit the application to confirm the migration won't break the application. Because there are no safe alternatives we don't define a `safe_remove_column` analogue. However there are still conditions we'd like to assert before dropping a column. For example, dropping an unused column that's used in one or more indexes may be safe from an application perspective, but the cascading drop of the index won't use a `CONCURRENT` operation to drop the dependent indexes and is therefore unsafe from a database perspective.
 
-When `unsafe_*` migration methods support checks of this type you can bypass the checks by passing an `:allow_dependent_objects` key in the method's `options` hash containing an array of dependent object types you'd like to allow. Until 2.0 none of these checks will run by default, but you can opt-in by setting `config.check_for_dependent_objects = true` [in your configuration initializer](#configuration).a
+For `unsafe_*` migration methods which support checks of this type you can bypass the checks by passing an `:allow_dependent_objects` key in the method's `options` hash containing an array of dependent object types you'd like to allow. These checks will run by default, but you can opt-out by setting `config.check_for_dependent_objects = false` [in your configuration initializer](#configuration).
 
 ### Migration Method Arguments
 
-We believe the `force: true` option to ActiveRecord's `create_table` method is always unsafe because it's not possible to denote exactly how the current state will change. Therefore we disallow using `force: true` even when calling `unsafe_create_table`. This option won't be enabled by default until 2.0, but you can opt-in by setting `config.allow_force_create_table = false` [in your configuration initializer](#configuration).
+We believe the `force: true` option to ActiveRecord's `create_table` method is always unsafe because it's not possible to denote exactly how the current state will change. Therefore we disallow using `force: true` even when calling `unsafe_create_table`. This option is enabled by default, but you can opt-out by setting `config.allow_force_create_table = true` [in your configuration initializer](#configuration).
 
 ### Rollback
 
@@ -184,7 +185,7 @@ safe_change_column_default :table, :column, -> { "NOW()" }
 safe_change_column_default :table, :column, -> { "'NOW()'" }
 ```
 
-Note: On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = true` [in your configuration initializer](#configuration).
+Note: On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = false` [in your configuration initializer](#configuration).
 
 #### safe\_make\_column\_nullable
 
@@ -544,9 +545,9 @@ end
 #### Available options
 
 - `disable_default_migration_methods`: If true, the default implementations of DDL changes in `ActiveRecord::Migration` and the PostgreSQL adapter will be overridden by implementations that raise a `PgHaMigrations::UnsafeMigrationError`. Default: `true`
-- `check_for_dependent_objects`: If true, some `unsafe_*` migration methods will raise a `PgHaMigrations::UnsafeMigrationError` if any dependent objects exist. Default: `false`
-- `prefer_single_step_column_addition_with_default`: If true, raise an error when adding a column and separately setting a constant default value for that column in the same migration. Default: `false`
-- `allow_force_create_table`: If false, the `force: true` option to ActiveRecord's `create_table` method is disallowed. Default: `true`
+- `check_for_dependent_objects`: If true, some `unsafe_*` migration methods will raise a `PgHaMigrations::UnsafeMigrationError` if any dependent objects exist. Default: `true`
+- `prefer_single_step_column_addition_with_default`: If true, raise an error when adding a column and separately setting a constant default value for that column in the same migration. Default: `true`
+- `allow_force_create_table`: If false, the `force: true` option to ActiveRecord's `create_table` method is disallowed. Default: `false`
 - `infer_primary_key_on_partitioned_tables`: If true, the primary key for partitioned tables will be inferred on PostgreSQL 11+ databases (identifier column + partition key columns). Default: `true`
 
 ### Rake Tasks
