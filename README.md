@@ -83,7 +83,7 @@ We [disable ActiveRecord's DDL transactions](./lib/pg_ha_migrations/hacks/disabl
   * Each newly acquired lock has its own timeout applied (so total lock time is additive).
   * [Safe lock acquisition](#safely_acquire_lock_for_table) (which is used in each migration method where locks will be acquired) can issue multiple lock attempts on lock timeouts (with sleep delays between attempts).
 
-You can change this by resetting `ActiveRecord::Migration.disable_ddl_transaction` in your application.
+Because of the above issues attempting to re-enable transaction migrations forfeits many of the safety guarantees this library provides and may even break certain functionally. If you'd like to experiment with it anyway you can re-enable transactional migrations by adding `self.disable_ddl_transaction = false` to your migration class definition.
 
 ## Usage
 
