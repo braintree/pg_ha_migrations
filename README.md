@@ -103,16 +103,6 @@ The following functionality is currently unsupported:
 
 ### Migration Methods
 
-#### safely\_acquire\_lock\_for\_table
-
-Acquires a lock on a table using the following algorithm:
-
-1. Verify that no long-running queries are using the table.
-  A. If long-running queries are currently using the table, sleep `PgHaMigrations::LOCK_TIMEOUT_SECONDS` and check again.
-2. If no long-running queries are currently using the table, optimistically attempt to lock the table (with a timeout of `PgHaMigrations::LOCK_TIMEOUT_SECONDS').
-  A. If the lock is not acquired, sleep `PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS`, and start again at step 1.
-3. If the lock is acquired, proceed to run the given block.
-
 #### safe\_create\_table
 
 Safely creates a new table.
@@ -466,6 +456,14 @@ safe_partman_reapply_privileges :table
 ### Utilities
 
 #### safely\_acquire\_lock\_for\_table
+
+Acquires a lock on a table using the following algorithm:
+
+1. Verify that no long-running queries are using the table.
+    - If long-running queries are currently using the table, sleep `PgHaMigrations::LOCK_TIMEOUT_SECONDS` and check again.
+2. If no long-running queries are currently using the table, optimistically attempt to lock the table (with a timeout of `PgHaMigrations::LOCK_TIMEOUT_SECONDS`).
+    - If the lock is not acquired, sleep `PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS`, and start again at step 1.
+3. If the lock is acquired, proceed to run the given block.
 
 Safely acquire an access exclusive lock for a table.
 
