@@ -1279,6 +1279,36 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "unsafe_remove_check_constraint" do
+          it "throws error when symbol is used for contraint name" do
+            migration = Class.new(migration_klass) do
+              define_method(:up) do
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+                unsafe_remove_check_constraint :foos, name: :constraint_foo_bar_is_not_null
+              end
+            end
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(ArgumentError, /Table 'foos' has no check constraint for {:name=>:constraint_foo_bar_is_not_null}/)
+          end
+
+          it "doesn't throw error when string is used for constraint name" do
+            migration = Class.new(migration_klass) do
+              define_method(:up) do
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+                unsafe_remove_check_constraint :foos, name: "constraint_foo_bar_is_not_null"
+              end
+            end
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.not_to raise_error
+          end
+        end
+
         describe "safe_make_column_nullable" do
           it "removes the not null constraint from the column" do
             migration = Class.new(migration_klass) do
