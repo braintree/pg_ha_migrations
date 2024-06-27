@@ -1280,19 +1280,36 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "unsafe_remove_check_constraint" do
+          before(:each) do
+            setup_migration = Class.new(migration_klass) do
+              define_method(:up) do
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
           ["constraint_foo_bar_is_not_null", :constraint_foo_bar_is_not_null].each do |constraint_name|
             it "does not throw an error when #{constraint_name.is_a?(Symbol) ? "symbol" : "string"} is used for contraint name" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
-                  unsafe_create_table :foos
-                  unsafe_add_column :foos, :bar, :text
-                  unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
                   unsafe_remove_check_constraint :foos, name: constraint_name
                 end
               end
+
+              RSpec::Matchers.define_negated_matcher :not_raise_error, :raise_error
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
-              end.not_to raise_error
+              end.to not_raise_error
+                .and(change do
+                  ActiveRecord::Base.connection.select_value <<~SQL
+                    SELECT conname
+                    FROM pg_constraint
+                    WHERE conname = 'constraint_foo_bar_is_not_null'
+                  SQL
+                end.from("constraint_foo_bar_is_not_null").to(nil))
             end
           end
         end
