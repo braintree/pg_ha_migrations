@@ -16,17 +16,17 @@ module PgHaMigrations::SafeStatements
     when nil
       raise ArgumentError, "safe_create_enum_type expects a set of values; if you want an enum with no values please pass an empty array"
     when []
-      unsafe_execute("CREATE TYPE #{PG::Connection.quote_ident(name.to_s)} AS ENUM ()")
+      raw_execute("CREATE TYPE #{PG::Connection.quote_ident(name.to_s)} AS ENUM ()")
     else
       escaped_values = values.map do |value|
         "'#{PG::Connection.escape_string(value.to_s)}'"
       end
-      unsafe_execute("CREATE TYPE #{PG::Connection.quote_ident(name.to_s)} AS ENUM (#{escaped_values.join(',')})")
+      raw_execute("CREATE TYPE #{PG::Connection.quote_ident(name.to_s)} AS ENUM (#{escaped_values.join(',')})")
     end
   end
 
   def safe_add_enum_value(name, value)
-    unsafe_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} ADD VALUE '#{PG::Connection.escape_string(value)}'")
+    raw_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} ADD VALUE '#{PG::Connection.escape_string(value)}'")
   end
 
   def unsafe_rename_enum_value(name, old_value, new_value)
@@ -34,7 +34,7 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::InvalidMigrationError, "Renaming an enum value is not supported on Postgres databases before version 10"
     end
 
-    unsafe_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} RENAME VALUE '#{PG::Connection.escape_string(old_value)}' TO '#{PG::Connection.escape_string(new_value)}'")
+    raw_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} RENAME VALUE '#{PG::Connection.escape_string(old_value)}' TO '#{PG::Connection.escape_string(new_value)}'")
   end
 
   def safe_add_column(table, column, type, options = {})
@@ -134,13 +134,13 @@ module PgHaMigrations::SafeStatements
 
   def safe_make_column_nullable(table, column)
     safely_acquire_lock_for_table(table) do
-      unsafe_execute "ALTER TABLE #{table} ALTER COLUMN #{column} DROP NOT NULL"
+      raw_execute "ALTER TABLE #{table} ALTER COLUMN #{column} DROP NOT NULL"
     end
   end
 
   def unsafe_make_column_not_nullable(table, column, options={}) # options arg is only present for backwards compatiblity
     safely_acquire_lock_for_table(table) do
-      unsafe_execute "ALTER TABLE #{table} ALTER COLUMN #{column} SET NOT NULL"
+      raw_execute "ALTER TABLE #{table} ALTER COLUMN #{column} SET NOT NULL"
     end
   end
 
@@ -261,7 +261,7 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_set_maintenance_work_mem_gb(gigabytes)
-    unsafe_execute("SET maintenance_work_mem = '#{PG::Connection.escape_string(gigabytes.to_s)} GB'")
+    raw_execute("SET maintenance_work_mem = '#{PG::Connection.escape_string(gigabytes.to_s)} GB'")
   end
 
   def safe_add_unvalidated_check_constraint(table, expression, name:)
