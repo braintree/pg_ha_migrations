@@ -1279,7 +1279,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "unsafe_remove_check_constraint" do
+        describe "raw_remove_check_constraint" do
           before(:each) do
             setup_migration = Class.new(migration_klass) do
               define_method(:up) do
@@ -1295,7 +1295,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "does not throw an error when #{constraint_name.is_a?(Symbol) ? "symbol" : "string"} is used for contraint name" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
-                  unsafe_remove_check_constraint :foos, name: constraint_name
+                  raw_remove_check_constraint :foos, name: constraint_name
                 end
               end
 

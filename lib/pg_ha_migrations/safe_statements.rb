@@ -600,7 +600,7 @@ module PgHaMigrations::SafeStatements
 
   # since rails versions < 7.1 has bug which does not handle symbol for
   # constraint name, we are converting name to string explicitly to solve that.
-  def unsafe_remove_check_constraint(table, name:, **options)
+  def raw_remove_check_constraint(table, name:, **options)
     super(table, name: name.to_s, **options)
   end
 
