@@ -2708,7 +2708,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
           it "doesn't acquire a lock which prevents concurrent reads and writes" do
             alternate_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(pool_config)
-            alternate_connection = alternate_connection_pool.connection
+
+            # The #connection method was deprecated in Rails 7.2 in favor of #lease_connection
+            alternate_connection = if alternate_connection_pool.respond_to?(:lease_connection)
+              alternate_connection_pool.lease_connection
+            else
+              alternate_connection_pool.connection
+            end
 
             alternate_connection.execute("BEGIN")
             alternate_connection.execute("LOCK TABLE foos")
@@ -4069,7 +4075,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
               ActiveRecord::ConnectionAdapters::ConnectionPool.new(pool_config)
             end
             let(:alternate_connection) do
-              alternate_connection_pool.connection
+              # The #connection method was deprecated in Rails 7.2 in favor of #lease_connection
+              if alternate_connection_pool.respond_to?(:lease_connection)
+                alternate_connection_pool.lease_connection
+              else
+                alternate_connection_pool.connection
+              end
             end
             let(:migration) { Class.new(migration_klass).new }
 
