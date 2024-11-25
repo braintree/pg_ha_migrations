@@ -94,6 +94,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
     describe migration_klass do
+      let(:schema_migration) do
+        ActiveRecord::Base.connection.schema_migration if ActiveRecord::Base.connection.respond_to?(:schema_migration)
+      end
+
       it "can be used as a migration class" do
         expect do
           Class.new(migration_klass)
@@ -123,7 +127,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               # which completely bypasses this logic.
               ActiveRecord::MigrationContext.new(
                 migration_dir,
-                ActiveRecord::Base.connection.schema_migration,
+                schema_migration,
               ).migrate
             end
           end.to raise_error(StandardError, /An error has occurred, all later migrations canceled/)
@@ -160,7 +164,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               # which completely bypasses this logic.
               ActiveRecord::MigrationContext.new(
                 migration_dir,
-                ActiveRecord::Base.connection.schema_migration,
+                schema_migration,
               ).migrate
             end
           end.to raise_error(StandardError, /An error has occurred, this and all later migrations canceled/)
