@@ -98,8 +98,7 @@ The following functionality is currently unsupported:
 
 ### Compatibility Notes
 
-- While some features may work with other versions, this gem is currently tested against PostgreSQL 12+ and Partman 4.x
-- There is a [bug](https://github.com/rails/rails/pull/41490) in early versions of Rails 6.1 when using `algorithm: :concurrently`. To add / remove indexes concurrently, please upgrade to at least Rails 6.1.4.
+- While some features may work with other versions, this gem is currently tested against PostgreSQL 13+ and Partman 4.x
 
 ### Migration Methods
 
