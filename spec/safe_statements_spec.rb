@@ -857,7 +857,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "calls safely_acquire_lock_for_table" do
             migration = Class.new(migration_klass).new
 
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos, mode: :access_exclusive)
             migration.unsafe_add_column(:foos, :bar, :text)
           end
         end
@@ -1624,7 +1624,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect do
               test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to make_database_queries(matching: /LOCK "public"\."foos" IN SHARE MODE/, count: 1)
+            end.to make_database_queries(matching: /LOCK "public"\."foos" IN SHARE MODE/, count: 2)
               .and(make_database_queries(matching: /CREATE INDEX "index_foos_on_bar"/, count: 1))
 
             indexes = ActiveRecord::Base.connection.indexes("foos")
@@ -2520,7 +2520,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe  "unsafe_add_index" do
+        describe "unsafe_add_index" do
           it "raises a helper warning when ActiveRecord is going to swallow per-column options" do
             migration = Class.new(migration_klass) do
               def up
@@ -2556,6 +2556,52 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect do
               migration.suppress_messages { migration.migrate(:up) }
             end.not_to make_database_queries(matching: /int4_ops/)
+          end
+
+          it "safely acquires SHARE lock when not creating indexes concurrently" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.integer :bar
+                end
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_index :foos, :bar
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /LOCK "public"\."foos" IN SHARE MODE/, count: 1)
+              .and(make_database_queries(matching: /CREATE INDEX "index_foos_on_bar"/, count: 1))
+          end
+
+          it "skips lock acquisition when creating indexes concurrently" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.integer :bar
+                end
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_index :foos, :bar, algorithm: :concurrently
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+            expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/LOCK/)
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /CREATE INDEX CONCURRENTLY "index_foos_on_bar"/, count: 1)
           end
 
           it "generates index name with hashed identifier when default index name is too large" do
@@ -2667,19 +2713,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          it "raises a nice error if options isn't a hash" do
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_remove_concurrent_index :foos, [:column]
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(ArgumentError, "Expected safe_remove_concurrent_index to be called with arguments (table_name, :name => ...)")
-          end
-
-          it "raises a nice error if options is a hash with a :name key" do
+          it "raises a nice error if options does not have :name key" do
             test_migration = Class.new(migration_klass) do
               def up
                 safe_remove_concurrent_index :foos, :blah => :foo
@@ -4056,16 +4090,16 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "renames change_table to unsafe_change_table" do
             migration = Class.new(migration_klass) do
               def up
-                unsafe_create_table :foos
-                unsafe_change_table :foos do |t|
-                  t.string :bar
-                end
+                unsafe_change_table :foos
               end
             end
 
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("bar")
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::UnsafeMigrationError,
+              ":change_table is too generic to even allow an unsafe variant. Instead use explicit methods for adding / removing / modifying columns."
+            )
           end
 
           it "renames rename_table to unsafe_rename_table" do
