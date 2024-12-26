@@ -1343,6 +1343,23 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "safe_make_column_not_nullable" do
+          it "adds the not null constraint to the column" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.text :bar, :null => false
+                end
+                safe_make_column_not_nullable :foos, :bar
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
+          end
+        end
+
         describe "safe_set_maintenance_work_mem_gb" do
           it "sets the maintenance work memory for building indexes" do
             begin

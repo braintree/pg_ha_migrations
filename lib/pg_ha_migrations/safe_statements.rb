@@ -133,14 +133,44 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_make_column_nullable(table, column)
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_column_name = connection.quote_column_name(column)
+
     safely_acquire_lock_for_table(table) do
-      raw_execute "ALTER TABLE #{table} ALTER COLUMN #{column} DROP NOT NULL"
+      raw_execute "ALTER TABLE #{quoted_table_name} ALTER COLUMN #{quoted_column_name} DROP NOT NULL"
     end
   end
 
+  # Postgres 12+ can use a valid CHECK constraint to proove that no values of a column are null, avoiding
+  # locking the table when altering a column to NOT NULL
+  #
+  # Source:
+  # https://dba.stackexchange.com/questions/267947/how-can-i-set-a-column-to-not-null-without-locking-the-table-during-a-table-scan/268128#268128
+  # (https://archive.is/X55up)
+  def safe_make_column_not_nullable(table, column)
+    if ActiveRecord::Base.connection.postgresql_version < 12_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Cannot safely make a column non-nullable before Postgres 12"
+    end
+
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_column_name = connection.quote_column_name(column)
+
+    tmp_constraint_name = :tmp_not_null_constraint
+
+    safe_add_unvalidated_check_constraint(table, "#{quoted_column_name} IS NOT NULL", name: tmp_constraint_name)
+    safe_validate_check_constraint(table, name: tmp_constraint_name)
+
+    unsafe_make_column_not_nullable(table, column)
+
+    raw_execute "ALTER TABLE #{quoted_table_name} DROP CONSTRAINT #{tmp_constraint_name}"
+  end
+
   def unsafe_make_column_not_nullable(table, column, options={}) # options arg is only present for backwards compatiblity
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_column_name = connection.quote_column_name(column)
+
     safely_acquire_lock_for_table(table) do
-      raw_execute "ALTER TABLE #{table} ALTER COLUMN #{column} SET NOT NULL"
+      raw_execute "ALTER TABLE #{quoted_table_name} ALTER COLUMN #{quoted_column_name} SET NOT NULL"
     end
   end
 

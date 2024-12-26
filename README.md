@@ -183,6 +183,13 @@ Safely make the column nullable.
 ```ruby
 safe_make_column_nullable :table, :column
 ```
+#### safe\_make\_column\_not\_nullable
+
+Safely make the column not nullable - adds a temporary constraint and uses that constraint to proove no values are null before altering the column, then removes the temporary constraint
+
+```ruby
+safe_make_column_not_nullable :table, :column
+```
 
 #### unsafe\_make\_column\_not\_nullable
 
