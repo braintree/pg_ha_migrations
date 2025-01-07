@@ -161,8 +161,7 @@ module PgHaMigrations::SafeStatements
     safe_validate_check_constraint(table, name: tmp_constraint_name)
 
     unsafe_make_column_not_nullable(table, column)
-
-    raw_execute "ALTER TABLE #{quoted_table_name} DROP CONSTRAINT #{tmp_constraint_name}"
+    unsafe_remove_constraint(table, name: tmp_constraint_name)
   end
 
   def unsafe_make_column_not_nullable(table, column, options={}) # options arg is only present for backwards compatiblity
