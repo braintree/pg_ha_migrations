@@ -53,7 +53,7 @@ module PgHaMigrations::SafeStatements
         raise PgHaMigrations::UnsafeMigrationError.new(":default is not safe if the default value is volatile. Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
       end
     elsif options[:null] == false
-      raise PgHaMigrations::UnsafeMigrationError.new(":null => false is NOT SAFE if the table has data! If you _really_ want to do this, use unsafe_make_column_not_nullable")
+      raise PgHaMigrations::UnsafeMigrationError.new(":null => false is NOT SAFE if the table has data! If you want to do this, use safe_make_column_not_nullable")
     end
 
     unless options.has_key?(:default)
