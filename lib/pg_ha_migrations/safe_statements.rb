@@ -152,12 +152,16 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::InvalidMigrationError, "Cannot safely make a column non-nullable before Postgres 12"
     end
 
-    quoted_table_name = connection.quote_table_name(table)
-    quoted_column_name = connection.quote_column_name(column)
+    validated_table = PgHaMigrations::Table.from_table_name(table)
+    tmp_constraint_name = "tmp_not_null_constraint_#{OpenSSL::Digest::SHA256.hexdigest(column.to_s).first(7)}"
 
-    tmp_constraint_name = :tmp_not_null_constraint
+    if validated_table.has_constraint?(tmp_constraint_name)
+      raise PgHaMigrations::InvalidMigrationError, "A constraint #{tmp_constraint_name.inspect} already exists. " \
+        "This implies that a previous invocation of this method failed and left behind a temporary constraint. " \
+        "Please drop the constraint before attempting to run this method again."
+    end
 
-    safe_add_unvalidated_check_constraint(table, "#{quoted_column_name} IS NOT NULL", name: tmp_constraint_name)
+    safe_add_unvalidated_check_constraint(table, "#{connection.quote_column_name(column)} IS NOT NULL", name: tmp_constraint_name)
     safe_validate_check_constraint(table, name: tmp_constraint_name)
 
     unsafe_make_column_not_nullable(table, column)

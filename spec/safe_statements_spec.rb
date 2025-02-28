@@ -1345,18 +1345,93 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
         describe "safe_make_column_not_nullable" do
           it "adds the not null constraint to the column" do
-            migration = Class.new(migration_klass) do
+            setup_migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table :foos do |t|
-                  t.text :bar, :null => false
+                  t.text :bar
+                end
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_make_column_not_nullable :foos, :bar
+              end
+            end
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(true)
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
+
+            expect(ActiveRecord::Base.connection.select_values("SELECT conname FROM pg_constraint WHERE conname like 'tmp%'"))
+              .to be_empty
+          end
+
+          it "raises error if previous invocation left behind temporary constraint" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.text :bar
                 end
                 safe_make_column_not_nullable :foos, :bar
               end
             end
 
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_wrap_original do |m, *args|
+              m.call(*args) unless args.first =~ /DROP CONSTRAINT "tmp_not_null_constraint_fcde2b2"/
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_make_column_not_nullable :foos, :bar
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, /A constraint "tmp_not_null_constraint_fcde2b2" already exists/)
+
+            expect(ActiveRecord::Base.connection.select_values("SELECT conname FROM pg_constraint WHERE conname like 'tmp%'"))
+              .to contain_exactly("tmp_not_null_constraint_fcde2b2")
+          end
+
+          it "does not raise error if previous invocation failed and targeting different column" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.text :bar
+                  t.text :baz
+                end
+                safe_make_column_not_nullable :foos, :bar
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_wrap_original do |m, *args|
+              m.call(*args) unless args.first =~ /DROP CONSTRAINT "tmp_not_null_constraint_fcde2b2"/
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_make_column_not_nullable :foos, :baz
+              end
+            end
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "baz" }.null).to eq(true)
+
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "baz" }.null).to eq(false)
+
+            expect(ActiveRecord::Base.connection.select_values("SELECT conname FROM pg_constraint WHERE conname like 'tmp%'"))
+              .to contain_exactly("tmp_not_null_constraint_fcde2b2")
           end
         end
 
