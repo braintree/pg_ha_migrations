@@ -1,4 +1,5 @@
 require "bundler/setup"
+require "logger"
 require "pg_ha_migrations"
 require "db-query-matchers"
 require "pry"
