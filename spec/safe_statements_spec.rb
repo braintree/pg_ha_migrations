@@ -5212,6 +5212,72 @@ RSpec.describe PgHaMigrations::SafeStatements do
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
+        it "allows re-entrancy when escalating inner lock but not the parent lock" do
+          migration.safely_acquire_lock_for_table(table_name) do
+            migration.safely_acquire_lock_for_table(table_name, mode: :share) do
+              migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) do
+                locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+                aggregate_failures do
+                  expect(locks_for_table).to contain_exactly(
+                    having_attributes(
+                      table: "bogus_table",
+                      lock_type: "AccessExclusiveLock",
+                      granted: true,
+                      pid: kind_of(Integer),
+                    ),
+                    having_attributes(
+                      table: "bogus_table",
+                      lock_type: "ShareLock",
+                      granted: true,
+                      pid: kind_of(Integer),
+                    ),
+                    having_attributes(
+                      table: "bogus_table",
+                      lock_type: "ExclusiveLock",
+                      granted: true,
+                      pid: kind_of(Integer),
+                    ),
+                  )
+
+                  expect(locks_for_table.first.pid).to eq(locks_for_table.second.pid)
+                  expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
+                end
+              end
+            end
+
+            locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+            aggregate_failures do
+              expect(locks_for_table).to contain_exactly(
+                having_attributes(
+                  table: "bogus_table",
+                  lock_type: "AccessExclusiveLock",
+                  granted: true,
+                  pid: kind_of(Integer),
+                ),
+                having_attributes(
+                  table: "bogus_table",
+                  lock_type: "ShareLock", # Postgres releases the inner lock once the outer lock is released
+                  granted: true,
+                  pid: kind_of(Integer),
+                ),
+                having_attributes(
+                  table: "bogus_table",
+                  lock_type: "ExclusiveLock", # Postgres releases the inner lock once the outer lock is released
+                  granted: true,
+                  pid: kind_of(Integer),
+                ),
+              )
+
+              expect(locks_for_table.first.pid).to eq(locks_for_table.second.pid)
+              expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
+            end
+          end
+
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+        end
+
         it "does not allow re-entrancy when lock escalation detected" do
           expect do
             migration.safely_acquire_lock_for_table(table_name, mode: :share) do

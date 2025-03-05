@@ -549,20 +549,20 @@ module PgHaMigrations::SafeStatements
 
     target_tables = PgHaMigrations::TableCollection.from_table_names(tables, mode)
 
-    # Grab the latest locked tables from the call stack.
+    # Grab the initial set of locked tables from the call stack.
     # This will be nil if we are not in a nested context.
-    nested_target_tables = safely_acquire_lock_for_table_history.last
+    parent_lock_tables = safely_acquire_lock_for_table_history.first
 
-    if nested_target_tables
-      if !target_tables.subset?(nested_target_tables)
+    if parent_lock_tables
+      if !target_tables.subset?(parent_lock_tables)
         raise PgHaMigrations::InvalidMigrationError,
           "Nested lock detected! Cannot acquire lock on #{target_tables.to_sql} " \
-          "while #{nested_target_tables.to_sql} is locked."
+          "while #{parent_lock_tables.to_sql} is locked."
       end
 
-      if nested_target_tables.mode < target_tables.mode
+      if parent_lock_tables.mode < target_tables.mode
         raise PgHaMigrations::InvalidMigrationError,
-          "Lock escalation detected! Cannot change lock level from :#{nested_target_tables.mode} " \
+          "Lock escalation detected! Cannot change lock level from :#{parent_lock_tables.mode} " \
           "to :#{target_tables.mode} for #{target_tables.to_sql}."
       end
     end
@@ -573,7 +573,7 @@ module PgHaMigrations::SafeStatements
         # we have already acquired the lock so this check is unnecessary.
         # In fact, it could actually cause a deadlock if a blocking query
         # was executed shortly after the initial lock acquisition.
-        break if nested_target_tables
+        break if parent_lock_tables
 
         blocking_transactions = PgHaMigrations::BlockingDatabaseTransactions.find_blocking_transactions("#{PgHaMigrations::LOCK_TIMEOUT_SECONDS} seconds")
 
