@@ -171,13 +171,24 @@ module PgHaMigrations
     end
   end
 
-  class TableCollection < Set
+  class TableCollection
+    include Enumerable
+
+    attr_reader :raw_set
+
+    delegate :each, to: :raw_set
+    delegate :mode, to: :first, allow_nil: true
+
     def self.from_table_names(tables, mode=nil)
       new(tables) { |table| Table.from_table_name(table, mode) }
     end
 
-    def mode
-      first&.mode
+    def initialize(tables, &blk)
+      @raw_set = tables.map(&blk).to_set
+    end
+
+    def subset?(other)
+      raw_set.subset?(other.raw_set)
     end
 
     def to_sql
