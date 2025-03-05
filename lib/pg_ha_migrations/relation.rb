@@ -14,7 +14,7 @@ module PgHaMigrations
     end
 
     def conflicts_with?(other)
-      self == other && (
+      self.eql?(other) && (
         mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
       )
     end
@@ -30,8 +30,12 @@ module PgHaMigrations
       name.present? && schema.present?
     end
 
-    def ==(other)
-      other.is_a?(Relation) && name == other.name && schema == other.schema
+    def eql?(other)
+      other.is_a?(Relation) && hash == other.hash
+    end
+
+    def hash
+      [name, schema].hash
     end
   end
 
@@ -164,6 +168,28 @@ module PgHaMigrations
           AND pg_namespace.nspname = #{connection.quote(schema)}
           AND pg_class.relname = #{connection.quote(name)}
       SQL
+    end
+  end
+
+  class TableCollection < Set
+    def self.from_table_names(tables, mode=nil)
+      new(tables) { |table| Table.from_table_name(table, mode) }
+    end
+
+    def mode
+      first&.mode
+    end
+
+    def to_sql
+      map(&:fully_qualified_name).join(", ")
+    end
+
+    def with_partitions
+      tables = flat_map do |table|
+        table.partitions(include_sub_partitions: true, include_self: true)
+      end
+
+      self.class.new(tables)
     end
   end
 end
