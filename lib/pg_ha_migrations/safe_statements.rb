@@ -568,7 +568,13 @@ module PgHaMigrations::SafeStatements
     end
 
     until successfully_acquired_lock
-      while (
+      loop do
+        # If in a nested context and all of the above checks have passed,
+        # we have already acquired the lock so this check is unnecessary.
+        # In fact, it could actually cause a deadlock if a blocking query
+        # was executed shortly after the initial lock acquisition.
+        break if nested_target_tables
+
         blocking_transactions = PgHaMigrations::BlockingDatabaseTransactions.find_blocking_transactions("#{PgHaMigrations::LOCK_TIMEOUT_SECONDS} seconds")
 
         # Locking a partitioned table will also lock child tables (including sub-partitions),

@@ -5213,6 +5213,45 @@ RSpec.describe PgHaMigrations::SafeStatements do
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
+        it "skips blocking query check for nested lock acquisition" do
+          stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+
+          query_thread = nil
+
+          expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
+            .once
+            .and_call_original
+
+          begin
+            migration.safely_acquire_lock_for_table(table_name) do
+              query_thread = Thread.new { alternate_connection.execute("SELECT * FROM bogus_table") }
+
+              sleep 2
+
+              migration.safely_acquire_lock_for_table(table_name) do
+                expect(locks_for_table(table_name, connection: alternate_connection_2)).to contain_exactly(
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "AccessExclusiveLock",
+                    granted: true,
+                    pid: kind_of(Integer),
+                  ),
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "AccessShareLock",
+                    granted: false,
+                    pid: kind_of(Integer),
+                  ),
+                )
+              end
+            end
+          ensure
+            query_thread.join if query_thread
+          end
+
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+        end
+
         it "raises error when attempting nested lock on different table" do
           ActiveRecord::Base.connection.execute("CREATE TABLE foo(pk SERIAL, i INTEGER)")
 
