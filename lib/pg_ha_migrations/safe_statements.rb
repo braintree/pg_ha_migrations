@@ -142,7 +142,7 @@ module PgHaMigrations::SafeStatements
   end
 
   # Postgres 12+ can use a valid CHECK constraint to validate that no values of a column are null, avoiding
-  # locking the table when altering a column to NOT NULL
+  # a full table scan while holding an exclusive lock on the table when altering a column to NOT NULL
   #
   # Source:
   # https://dba.stackexchange.com/questions/267947/how-can-i-set-a-column-to-not-null-without-locking-the-table-during-a-table-scan/268128#268128
