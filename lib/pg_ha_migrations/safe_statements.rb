@@ -598,6 +598,9 @@ module PgHaMigrations::SafeStatements
 
       connection.transaction do
         begin
+          # A lock timeout would apply to each individual table in the query,
+          # so we made a conscious decision to use a statement timeout here
+          # to keep behavior consistent in a multi-table lock scenario.
           adjust_statement_timeout(PgHaMigrations::LOCK_TIMEOUT_SECONDS) do
             connection.execute("LOCK #{target_tables.to_sql} IN #{target_tables.mode.to_sql} MODE;")
           end
