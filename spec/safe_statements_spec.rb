@@ -4536,7 +4536,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           )
         end
 
-        it "releases the lock (even after an exception)" do
+        it "releases the lock even after an exception" do
           begin
             migration.safely_acquire_lock_for_table(table_name) do
               raise "bogus error"
@@ -4544,6 +4544,32 @@ RSpec.describe PgHaMigrations::SafeStatements do
           rescue
             # Throw away error.
           end
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+        end
+
+        it "releases the lock even after a swallowed postgres exception" do
+          migration.safely_acquire_lock_for_table(table_name) do
+            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
+
+            begin
+              migration.connection.execute("SELECT * FROM garbage")
+            rescue
+            end
+
+            expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+
+            expect do
+              migration.connection.execute("SELECT * FROM bogus_table")
+            end.to raise_error(ActiveRecord::StatementInvalid, /PG::InFailedSqlTransaction/)
+          end
+
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
