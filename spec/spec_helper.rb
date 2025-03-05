@@ -1,4 +1,5 @@
 require "bundler/setup"
+# In Rails 6 this isn't required in the right order and worked by accident; fixed in rails@0f5e7a66143
 require "logger"
 require "pg_ha_migrations"
 require "db-query-matchers"
