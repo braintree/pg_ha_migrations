@@ -97,6 +97,20 @@ module PgHaMigrations
       tables
     end
 
+    def has_constraint?(constraint_name)
+      connection.select_value(<<~SQL)
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_constraint, pg_class, pg_namespace
+          WHERE pg_class.oid = pg_constraint.conrelid
+            AND pg_class.relnamespace = pg_namespace.oid
+            AND pg_class.relname = #{connection.quote(name)}
+            AND pg_namespace.nspname = #{connection.quote(schema)}
+            AND pg_constraint.conname = #{connection.quote(constraint_name)}
+        )
+      SQL
+    end
+
     def has_rows?
       connection.select_value("SELECT EXISTS (SELECT 1 FROM #{fully_qualified_name} LIMIT 1)")
     end

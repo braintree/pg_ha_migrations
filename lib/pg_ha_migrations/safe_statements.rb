@@ -53,7 +53,7 @@ module PgHaMigrations::SafeStatements
         raise PgHaMigrations::UnsafeMigrationError.new(":default is not safe if the default value is volatile. Use safe_change_column_default afterwards then backfill the data to prevent locking the table")
       end
     elsif options[:null] == false
-      raise PgHaMigrations::UnsafeMigrationError.new(":null => false is NOT SAFE if the table has data! If you _really_ want to do this, use unsafe_make_column_not_nullable")
+      raise PgHaMigrations::UnsafeMigrationError.new(":null => false is NOT SAFE if the table has data! If you want to do this, use safe_make_column_not_nullable")
     end
 
     unless options.has_key?(:default)
@@ -133,14 +133,47 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_make_column_nullable(table, column)
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_column_name = connection.quote_column_name(column)
+
     safely_acquire_lock_for_table(table) do
-      raw_execute "ALTER TABLE #{table} ALTER COLUMN #{column} DROP NOT NULL"
+      raw_execute "ALTER TABLE #{quoted_table_name} ALTER COLUMN #{quoted_column_name} DROP NOT NULL"
     end
   end
 
+  # Postgres 12+ can use a valid CHECK constraint to validate that no values of a column are null, avoiding
+  # a full table scan while holding an exclusive lock on the table when altering a column to NOT NULL
+  #
+  # Source:
+  # https://dba.stackexchange.com/questions/267947/how-can-i-set-a-column-to-not-null-without-locking-the-table-during-a-table-scan/268128#268128
+  # (https://archive.is/X55up)
+  def safe_make_column_not_nullable(table, column)
+    if ActiveRecord::Base.connection.postgresql_version < 12_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Cannot safely make a column non-nullable before Postgres 12"
+    end
+
+    validated_table = PgHaMigrations::Table.from_table_name(table)
+    tmp_constraint_name = "tmp_not_null_constraint_#{OpenSSL::Digest::SHA256.hexdigest(column.to_s).first(7)}"
+
+    if validated_table.has_constraint?(tmp_constraint_name)
+      raise PgHaMigrations::InvalidMigrationError, "A constraint #{tmp_constraint_name.inspect} already exists. " \
+        "This implies that a previous invocation of this method failed and left behind a temporary constraint. " \
+        "Please drop the constraint before attempting to run this method again."
+    end
+
+    safe_add_unvalidated_check_constraint(table, "#{connection.quote_column_name(column)} IS NOT NULL", name: tmp_constraint_name)
+    safe_validate_check_constraint(table, name: tmp_constraint_name)
+
+    unsafe_make_column_not_nullable(table, column)
+    unsafe_remove_constraint(table, name: tmp_constraint_name)
+  end
+
   def unsafe_make_column_not_nullable(table, column, options={}) # options arg is only present for backwards compatiblity
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_column_name = connection.quote_column_name(column)
+
     safely_acquire_lock_for_table(table) do
-      raw_execute "ALTER TABLE #{table} ALTER COLUMN #{column} SET NOT NULL"
+      raw_execute "ALTER TABLE #{quoted_table_name} ALTER COLUMN #{quoted_column_name} SET NOT NULL"
     end
   end
 
