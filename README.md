@@ -399,23 +399,7 @@ safe_partman_create_parent :table,
   premake: 10,
   start_partition: Time.current + 1.month,
   infinite_time_partitions: false,
-  inherit_privileges: false
-```
-
-#### unsafe\_partman\_create\_parent
-
-We have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
-While we recognize that these options are useful, we think they fit in the same category as `drop_table` and `rename_table`, and are therefore unsafe from an application perspective.
-If you wish to define these options, you must use this method.
-
-```ruby
-safe_create_partitioned_table :table, type: :range, partition_key: :created_at do |t|
-  t.timestamps null: false
-end
-
-unsafe_partman_create_parent :table,
-  partition_key: :created_at,
-  interval: "weekly",
+  inherit_privileges: false,
   retention: "60 days",
   retention_keep_table: false
 ```
@@ -423,7 +407,7 @@ unsafe_partman_create_parent :table,
 #### safe\_partman\_update\_config
 
 There are some partitioning options that cannot be set in the call to `create_parent` and are only available in the `part_config` table.
-As mentioned previously, you can specify these args in the call to `safe_partman_create_parent` or `unsafe_partman_create_parent` which will be delegated to this method.
+As mentioned previously, you can specify these args in the call to `safe_partman_create_parent` which will be delegated to this method.
 Calling this method directly will be useful if you need to modify your partitioned table after the fact.
 
 Allowed keyword args:
@@ -445,8 +429,9 @@ safe_partman_update_config :table,
 
 #### unsafe\_partman\_update\_config
 
-As with creating a partman parent table, we have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
-If you wish to define these options, you must use this method.
+We have chosen to flag the use of `retention` and `retention_keep_table` as an unsafe operation.
+While we recognize that these options are useful, changing these values fits in the same category as `drop_table` and `rename_table`, and is therefore unsafe from an application perspective.
+If you wish to change these options, you must use this method.
 
 ```ruby
 unsafe_partman_update_config :table,

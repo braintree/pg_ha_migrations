@@ -403,15 +403,7 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def safe_partman_create_parent(table, **options)
-    if options[:retention].present? || options[:retention_keep_table] == false
-      raise PgHaMigrations::UnsafeMigrationError.new(":retention and/or :retention_keep_table => false can potentially result in data loss if misconfigured. Please use unsafe_partman_create_parent if you want to set these options")
-    end
-
-    unsafe_partman_create_parent(table, **options)
-  end
-
-  def unsafe_partman_create_parent(
+  def safe_partman_create_parent(
     table,
     partition_key:,
     interval:,
@@ -483,26 +475,6 @@ module PgHaMigrations::SafeStatements
     end
 
     unsafe_partman_update_config(table, **options)
-  end
-
-  def unsafe_partman_update_config(table, **options)
-    invalid_options = options.keys - PgHaMigrations::PARTMAN_UPDATE_CONFIG_OPTIONS
-
-    raise ArgumentError, "Unrecognized argument(s): #{invalid_options}" unless invalid_options.empty?
-
-    PgHaMigrations::PartmanConfig.schema = _quoted_partman_schema
-
-    config = PgHaMigrations::PartmanConfig.find(_fully_qualified_table_name_for_partman(table))
-
-    config.assign_attributes(**options)
-
-    inherit_privileges_changed = config.inherit_privileges_changed?
-
-    say_with_time "partman_update_config(#{table.inspect}, #{options.map { |k,v| "#{k}: #{v.inspect}" }.join(", ")})" do
-      config.save!
-    end
-
-    safe_partman_reapply_privileges(table) if inherit_privileges_changed
   end
 
   def safe_partman_reapply_privileges(table)

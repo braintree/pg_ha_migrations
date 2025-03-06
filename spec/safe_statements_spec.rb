@@ -3344,49 +3344,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "safe_partman_create_parent" do
-          it "raises error when retention is set" do
-            migration = Class.new(migration_klass).new
-
-            expect(migration).to_not receive(:unsafe_partman_create_parent)
-
-            expect do
-              migration.safe_partman_create_parent(:foos3, retention: "60 days")
-            end.to raise_error(
-              PgHaMigrations::UnsafeMigrationError,
-              /:retention and\/or :retention_keep_table => false can potentially result in data loss if misconfigured/
-            )
-          end
-
-          it "raises error when retention_keep_table is set" do
-            migration = Class.new(migration_klass).new
-
-            expect(migration).to_not receive(:unsafe_partman_create_parent)
-
-            expect do
-              migration.safe_partman_create_parent(:foos3, retention_keep_table: false)
-            end.to raise_error(
-              PgHaMigrations::UnsafeMigrationError,
-              /:retention and\/or :retention_keep_table => false can potentially result in data loss if misconfigured/
-            )
-          end
-
-          it "delegates to unsafe_partman_create_parent when potentially dangerous args are not set" do
-            migration = Class.new(migration_klass).new
-
-            expect(migration).to receive(:unsafe_partman_create_parent).with(:foos3, arg1: "foo", arg2: "bar")
-
-            migration.safe_partman_create_parent(:foos3, arg1: "foo", arg2: "bar")
-          end
-        end
-
-        describe "unsafe_partman_create_parent" do
           context "when extension not installed" do
             it "raises error" do
               create_range_partitioned_table(:foos3, migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3408,7 +3372,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3450,7 +3414,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3485,7 +3449,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 self.current_time = Time.current
 
                 def up
-                  unsafe_partman_create_parent "public.foos3",
+                  safe_partman_create_parent "public.foos3",
                     partition_key: :created_at,
                     interval: "weekly",
                     template_table: "public.foos3_template",
@@ -3542,7 +3506,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3564,7 +3528,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when partition key not present" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: nil, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: nil, interval: "monthly"
                 end
               end
 
@@ -3576,7 +3540,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when interval not present" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: nil
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: nil
                 end
               end
 
@@ -3588,7 +3552,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when unsupported optional arg is supplied" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", foo: "bar"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", foo: "bar"
                 end
               end
 
@@ -3600,7 +3564,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when on Postgres < 11" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3614,7 +3578,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when parent table does not exist" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3626,7 +3590,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when parent table does not exist and fully qualified name provided" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent "public.foos3", partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent "public.foos3", partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3640,7 +3604,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", template_table: :foos3_template
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", template_table: :foos3_template
                 end
               end
 
@@ -3654,7 +3618,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", template_table: "public.foos3_template"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", template_table: "public.foos3_template"
                 end
               end
 
@@ -3677,7 +3641,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3700,7 +3664,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent "foos3'", partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent "foos3'", partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3712,7 +3676,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             it "raises error when invalid type used for start partition" do
               migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", start_partition: "garbage"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly", start_partition: "garbage"
                 end
               end
 
@@ -3786,7 +3750,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               setup_migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3824,7 +3788,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               setup_migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3,
+                  safe_partman_create_parent :foos3,
                     partition_key: :created_at,
                     interval: "monthly",
                     inherit_privileges: false,
@@ -3858,7 +3822,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               setup_migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
                 end
               end
 
@@ -3950,7 +3914,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               setup_migration = Class.new(migration_klass) do
                 def up
-                  unsafe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                  safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
 
                   unsafe_execute(<<~SQL)
                     CREATE ROLE foo NOLOGIN;
