@@ -5167,29 +5167,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) do
               locks_for_table = locks_for_table(table_name, connection: alternate_connection)
 
-              aggregate_failures do
-                expect(locks_for_table).to contain_exactly(
-                  having_attributes(
-                    table: "bogus_table",
-                    lock_type: "AccessExclusiveLock",
-                    granted: true,
-                    pid: kind_of(Integer),
-                  ),
-                  having_attributes(
-                    table: "bogus_table",
-                    lock_type: "ExclusiveLock",
-                    granted: true,
-                    pid: kind_of(Integer),
-                  ),
-                )
-
-                expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
-              end
-            end
-
-            locks_for_table = locks_for_table(table_name, connection: alternate_connection)
-
-            aggregate_failures do
+              # We skip the actual ExclusiveLock acquisition in Postgres
+              # since the parent lock is a higher level
               expect(locks_for_table).to contain_exactly(
                 having_attributes(
                   table: "bogus_table",
@@ -5197,16 +5176,19 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   granted: true,
                   pid: kind_of(Integer),
                 ),
-                having_attributes(
-                  table: "bogus_table",
-                  lock_type: "ExclusiveLock", # Postgres releases the inner lock once the outer lock is released
-                  granted: true,
-                  pid: kind_of(Integer),
-                ),
               )
-
-              expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
             end
+
+            locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+            expect(locks_for_table).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
           end
 
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
@@ -5218,61 +5200,29 @@ RSpec.describe PgHaMigrations::SafeStatements do
               migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) do
                 locks_for_table = locks_for_table(table_name, connection: alternate_connection)
 
-                aggregate_failures do
-                  expect(locks_for_table).to contain_exactly(
-                    having_attributes(
-                      table: "bogus_table",
-                      lock_type: "AccessExclusiveLock",
-                      granted: true,
-                      pid: kind_of(Integer),
-                    ),
-                    having_attributes(
-                      table: "bogus_table",
-                      lock_type: "ShareLock",
-                      granted: true,
-                      pid: kind_of(Integer),
-                    ),
-                    having_attributes(
-                      table: "bogus_table",
-                      lock_type: "ExclusiveLock",
-                      granted: true,
-                      pid: kind_of(Integer),
-                    ),
-                  )
-
-                  expect(locks_for_table.first.pid).to eq(locks_for_table.second.pid)
-                  expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
-                end
+                # We skip the actual ShareLock / ExclusiveLock acquisition
+                # in Postgres since the parent lock is a higher level
+                expect(locks_for_table).to contain_exactly(
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "AccessExclusiveLock",
+                    granted: true,
+                    pid: kind_of(Integer),
+                  ),
+                )
               end
             end
 
             locks_for_table = locks_for_table(table_name, connection: alternate_connection)
 
-            aggregate_failures do
-              expect(locks_for_table).to contain_exactly(
-                having_attributes(
-                  table: "bogus_table",
-                  lock_type: "AccessExclusiveLock",
-                  granted: true,
-                  pid: kind_of(Integer),
-                ),
-                having_attributes(
-                  table: "bogus_table",
-                  lock_type: "ShareLock", # Postgres releases the inner lock once the outer lock is released
-                  granted: true,
-                  pid: kind_of(Integer),
-                ),
-                having_attributes(
-                  table: "bogus_table",
-                  lock_type: "ExclusiveLock", # Postgres releases the inner lock once the outer lock is released
-                  granted: true,
-                  pid: kind_of(Integer),
-                ),
-              )
-
-              expect(locks_for_table.first.pid).to eq(locks_for_table.second.pid)
-              expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
-            end
+            expect(locks_for_table).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
           end
 
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty

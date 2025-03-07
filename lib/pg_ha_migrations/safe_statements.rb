@@ -3,14 +3,6 @@ module PgHaMigrations::SafeStatements
     @safe_added_columns_without_default_value ||= []
   end
 
-  # This variable is used to track nested lock acquisition.
-  # Each element is a PgHaMigrations::TableCollection object.
-  # The order of the array represents the current call stack,
-  # where the most recent method call is the last element.
-  def safely_acquire_lock_for_table_history
-    @safely_acquire_lock_for_table_history ||= []
-  end
-
   def safe_create_table(table, options={}, &block)
     if options[:force]
       raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
@@ -542,39 +534,35 @@ module PgHaMigrations::SafeStatements
   end
 
   def safely_acquire_lock_for_table(*tables, mode: :access_exclusive, &block)
-    # So this variable is always available in the ensure block
-    successfully_acquired_lock = false
-
     _check_postgres_adapter!
 
     target_tables = PgHaMigrations::TableCollection.from_table_names(tables, mode)
 
-    # Grab the initial set of locked tables from the call stack.
-    # This will be nil if we are not in a nested context.
-    parent_lock_tables = safely_acquire_lock_for_table_history.first
-
-    if parent_lock_tables
-      if !target_tables.subset?(parent_lock_tables)
+    if @parent_lock_tables
+      if !target_tables.subset?(@parent_lock_tables)
         raise PgHaMigrations::InvalidMigrationError,
           "Nested lock detected! Cannot acquire lock on #{target_tables.to_sql} " \
-          "while #{parent_lock_tables.to_sql} is locked."
+          "while #{@parent_lock_tables.to_sql} is locked."
       end
 
-      if parent_lock_tables.mode < target_tables.mode
+      if @parent_lock_tables.mode < target_tables.mode
         raise PgHaMigrations::InvalidMigrationError,
-          "Lock escalation detected! Cannot change lock level from :#{parent_lock_tables.mode} " \
+          "Lock escalation detected! Cannot change lock level from :#{@parent_lock_tables.mode} " \
           "to :#{target_tables.mode} for #{target_tables.to_sql}."
       end
+
+      # If in a nested context and all of the above checks have passed,
+      # we have already acquired the lock (or a lock at a higher level),
+      # and can simply execute the block and short-circuit.
+      block.call
+
+      return
     end
+
+    successfully_acquired_lock = false
 
     until successfully_acquired_lock
       loop do
-        # If in a nested context and all of the above checks have passed,
-        # we have already acquired the lock so this check is unnecessary.
-        # In fact, it could actually cause a deadlock if a blocking query
-        # was executed shortly after the initial lock acquisition.
-        break if parent_lock_tables
-
         blocking_transactions = PgHaMigrations::BlockingDatabaseTransactions.find_blocking_transactions("#{PgHaMigrations::LOCK_TIMEOUT_SECONDS} seconds")
 
         # Locking a partitioned table will also lock child tables (including sub-partitions),
@@ -619,13 +607,16 @@ module PgHaMigrations::SafeStatements
         end
 
         if successfully_acquired_lock
-          safely_acquire_lock_for_table_history.push(target_tables)
-          block.call
+          @parent_lock_tables = target_tables
+
+          begin
+            block.call
+          ensure
+            @parent_lock_tables = nil
+          end
         end
       end
     end
-  ensure
-    safely_acquire_lock_for_table_history.pop if successfully_acquired_lock
   end
 
   # since rails versions < 7.1 has bug which does not handle symbol for
