@@ -1,4 +1,8 @@
 module PgHaMigrations
+  # This object represents a pointer to an actual relation in Postgres.
+  # The mode attribute is optional metadata which can represent a lock
+  # that has already been acquired or a potential lock that we are
+  # looking to acquire.
   Relation = Struct.new(:name, :schema, :mode) do
     def self.connection
       ActiveRecord::Base.connection
@@ -13,12 +17,6 @@ module PgHaMigrations
       self.mode = LockMode.new(mode) if mode.present?
     end
 
-    def conflicts_with?(other)
-      self.eql?(other) && (
-        mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
-      )
-    end
-
     def fully_qualified_name
       @fully_qualified_name ||= [
         PG::Connection.quote_ident(schema),
@@ -30,6 +28,16 @@ module PgHaMigrations
       name.present? && schema.present?
     end
 
+    def conflicts_with?(other)
+      self.eql?(other) && (
+        mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
+      )
+    end
+
+    # Some code paths need to compare lock modes, while others just need
+    # to determine if the relation is the same object in Postgres, so
+    # equality here is simply looking at the relation name / schema.
+    # To also compare lock modes, #conflicts_with? is used.
     def eql?(other)
       other.is_a?(Relation) && hash == other.hash
     end
