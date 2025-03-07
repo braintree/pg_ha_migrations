@@ -4428,11 +4428,20 @@ RSpec.describe PgHaMigrations::SafeStatements do
             alternate_connection_pool.connection
           end
         end
+        let(:alternate_connection_2) do
+          # The #connection method was deprecated in Rails 7.2 in favor of #lease_connection
+          if alternate_connection_pool.respond_to?(:lease_connection)
+            alternate_connection_pool.lease_connection
+          else
+            alternate_connection_pool.connection
+          end
+        end
         let(:migration) { Class.new(migration_klass).new }
 
         before(:each) do
           ActiveRecord::Base.connection.execute(<<~SQL)
             CREATE TABLE #{table_name}(pk SERIAL, i INTEGER);
+            CREATE TABLE #{table_name}_2(pk SERIAL, i INTEGER);
             CREATE SCHEMA partman;
             CREATE EXTENSION pg_partman SCHEMA partman;
           SQL
@@ -4461,12 +4470,56 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        it "acquires exclusive locks by default when multiple tables provided" do
+          migration.safely_acquire_lock_for_table(table_name, "bogus_table_2") do
+            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              )
+            )
+
+            expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table_2",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              )
+            )
+          end
+        end
+
         it "acquires a lock in a different mode when provided" do
           migration.safely_acquire_lock_for_table(table_name, mode: :share) do
             expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "ShareLock",
+                granted: true,
+                pid: kind_of(Integer),
+              )
+            )
+          end
+        end
+
+        it "acquires locks in a different mode when multiple tables and mode provided" do
+          migration.safely_acquire_lock_for_table(table_name, "bogus_table_2", mode: :share_row_exclusive) do
+            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "ShareRowExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              )
+            )
+
+            expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table_2",
+                lock_type: "ShareRowExclusiveLock",
                 granted: true,
                 pid: kind_of(Integer),
               )
@@ -4483,7 +4536,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           )
         end
 
-        it "releases the lock (even after an exception)" do
+        it "releases the lock even after an exception" do
           begin
             migration.safely_acquire_lock_for_table(table_name) do
               raise "bogus error"
@@ -4491,6 +4544,32 @@ RSpec.describe PgHaMigrations::SafeStatements do
           rescue
             # Throw away error.
           end
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+        end
+
+        it "releases the lock even after a swallowed postgres exception" do
+          migration.safely_acquire_lock_for_table(table_name) do
+            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
+
+            begin
+              migration.connection.execute("SELECT * FROM garbage")
+            rescue
+            end
+
+            expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+
+            expect do
+              migration.connection.execute("SELECT * FROM bogus_table")
+            end.to raise_error(ActiveRecord::StatementInvalid, /PG::InFailedSqlTransaction/)
+          end
+
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
@@ -4512,6 +4591,39 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration.safely_acquire_lock_for_table(table_name) do
               expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
             end
+          end
+        end
+
+        it "times out the lock query after LOCK_TIMEOUT_SECONDS when multiple tables provided" do
+          stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+          stub_const("PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER", 0)
+          allow(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions).and_return([])
+          allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+          expect(ActiveRecord::Base.connection).to receive(:execute)
+            .with("LOCK \"public\".\"bogus_table\", \"public\".\"bogus_table_2\" IN ACCESS EXCLUSIVE MODE;")
+            .at_least(2)
+            .times
+
+          begin
+            query_thread = Thread.new do
+              alternate_connection.execute("BEGIN; LOCK bogus_table_2;")
+              sleep 3
+              alternate_connection.execute("ROLLBACK")
+            end
+
+            sleep 0.5
+
+            migration.suppress_messages do
+              migration.safely_acquire_lock_for_table(table_name, "bogus_table_2") do
+                aggregate_failures do
+                  expect(locks_for_table(table_name, connection: alternate_connection_2)).not_to be_empty
+                  expect(locks_for_table("bogus_table_2", connection: alternate_connection_2)).not_to be_empty
+                end
+              end
+            end
+          ensure
+            query_thread.join
           end
         end
 
@@ -4935,34 +5047,128 @@ RSpec.describe PgHaMigrations::SafeStatements do
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
+        it "allows re-entrancy when multiple tables provided" do
+          migration.safely_acquire_lock_for_table(table_name, "bogus_table_2") do
+            # The ordering of the args is intentional here to ensure
+            # the array sorting and equality logic works as intended
+            migration.safely_acquire_lock_for_table("bogus_table_2", table_name) do
+              expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+                having_attributes(
+                  table: "bogus_table",
+                  lock_type: "AccessExclusiveLock",
+                  granted: true,
+                  pid: kind_of(Integer),
+                ),
+              )
+
+              expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+                having_attributes(
+                  table: "bogus_table_2",
+                  lock_type: "AccessExclusiveLock",
+                  granted: true,
+                  pid: kind_of(Integer),
+                ),
+              )
+            end
+
+            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
+
+            expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table_2",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
+          end
+
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
+        end
+
+        it "allows re-entrancy when multiple tables provided and nested lock targets a subset of tables" do
+          migration.safely_acquire_lock_for_table(table_name, "bogus_table_2") do
+            migration.safely_acquire_lock_for_table(table_name) do
+              expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+                having_attributes(
+                  table: "bogus_table",
+                  lock_type: "AccessExclusiveLock",
+                  granted: true,
+                  pid: kind_of(Integer),
+                ),
+              )
+
+              expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+                having_attributes(
+                  table: "bogus_table_2",
+                  lock_type: "AccessExclusiveLock",
+                  granted: true,
+                  pid: kind_of(Integer),
+                ),
+              )
+            end
+
+            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
+
+            expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+              having_attributes(
+                table: "bogus_table_2",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
+          end
+
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
+        end
+
+        it "does not allow re-entrancy when multiple tables provided and nested lock targets a superset of tables" do
+          expect do
+            migration.safely_acquire_lock_for_table(table_name) do
+              expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+                having_attributes(
+                  table: "bogus_table",
+                  lock_type: "AccessExclusiveLock",
+                  granted: true,
+                  pid: kind_of(Integer),
+                ),
+              )
+
+              migration.safely_acquire_lock_for_table(table_name, "bogus_table_2") {}
+            end
+          end.to raise_error(
+            PgHaMigrations::InvalidMigrationError,
+            "Nested lock detected! Cannot acquire lock on \"public\".\"bogus_table\", \"public\".\"bogus_table_2\" while \"public\".\"bogus_table\" is locked."
+          )
+
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
+        end
+
         it "allows re-entrancy when inner lock is a lower level" do
           migration.safely_acquire_lock_for_table(table_name) do
             migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) do
               locks_for_table = locks_for_table(table_name, connection: alternate_connection)
 
-              aggregate_failures do
-                expect(locks_for_table).to contain_exactly(
-                  having_attributes(
-                    table: "bogus_table",
-                    lock_type: "AccessExclusiveLock",
-                    granted: true,
-                    pid: kind_of(Integer),
-                  ),
-                  having_attributes(
-                    table: "bogus_table",
-                    lock_type: "ExclusiveLock",
-                    granted: true,
-                    pid: kind_of(Integer),
-                  ),
-                )
-
-                expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
-              end
-            end
-
-            locks_for_table = locks_for_table(table_name, connection: alternate_connection)
-
-            aggregate_failures do
+              # We skip the actual ExclusiveLock acquisition in Postgres
+              # since the parent lock is a higher level
               expect(locks_for_table).to contain_exactly(
                 having_attributes(
                   table: "bogus_table",
@@ -4970,16 +5176,53 @@ RSpec.describe PgHaMigrations::SafeStatements do
                   granted: true,
                   pid: kind_of(Integer),
                 ),
-                having_attributes(
-                  table: "bogus_table",
-                  lock_type: "ExclusiveLock", # Postgres releases the inner lock once the outer lock is released
-                  granted: true,
-                  pid: kind_of(Integer),
-                ),
               )
-
-              expect(locks_for_table.first.pid).to eq(locks_for_table.last.pid)
             end
+
+            locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+            expect(locks_for_table).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
+          end
+
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+        end
+
+        it "allows re-entrancy when escalating inner lock but not the parent lock" do
+          migration.safely_acquire_lock_for_table(table_name) do
+            migration.safely_acquire_lock_for_table(table_name, mode: :share) do
+              migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) do
+                locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+                # We skip the actual ShareLock / ExclusiveLock acquisition
+                # in Postgres since the parent lock is a higher level
+                expect(locks_for_table).to contain_exactly(
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "AccessExclusiveLock",
+                    granted: true,
+                    pid: kind_of(Integer),
+                  ),
+                )
+              end
+            end
+
+            locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+
+            expect(locks_for_table).to contain_exactly(
+              having_attributes(
+                table: "bogus_table",
+                lock_type: "AccessExclusiveLock",
+                granted: true,
+                pid: kind_of(Integer),
+              ),
+            )
           end
 
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
@@ -5012,6 +5255,45 @@ RSpec.describe PgHaMigrations::SafeStatements do
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
+        it "skips blocking query check for nested lock acquisition" do
+          stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
+
+          query_thread = nil
+
+          expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions)
+            .once
+            .and_call_original
+
+          begin
+            migration.safely_acquire_lock_for_table(table_name) do
+              query_thread = Thread.new { alternate_connection.execute("SELECT * FROM bogus_table") }
+
+              sleep 2
+
+              migration.safely_acquire_lock_for_table(table_name) do
+                expect(locks_for_table(table_name, connection: alternate_connection_2)).to contain_exactly(
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "AccessExclusiveLock",
+                    granted: true,
+                    pid: kind_of(Integer),
+                  ),
+                  having_attributes(
+                    table: "bogus_table",
+                    lock_type: "AccessShareLock",
+                    granted: false,
+                    pid: kind_of(Integer),
+                  ),
+                )
+              end
+            end
+          ensure
+            query_thread.join if query_thread
+          end
+
+          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+        end
+
         it "raises error when attempting nested lock on different table" do
           ActiveRecord::Base.connection.execute("CREATE TABLE foo(pk SERIAL, i INTEGER)")
 
@@ -5036,26 +5318,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           )
 
           expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
-        end
-
-        it "uses statement_timeout instead of lock_timeout when on Postgres 9.1" do
-          allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_wrap_original do |m, *args|
-            if caller.detect { |line| line =~ /lib\/pg_ha_migrations\/blocking_database_transactions\.rb/ }
-              # The long-running transactions check needs to know the actual
-              # Postgres version to use the proper columns, so we don't want
-              # to mock any calls from it.
-              m.call(*args)
-            else
-              9_01_12
-            end
-          end
-
-          expect do
-            migration.safely_acquire_lock_for_table(table_name) do
-              expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
-            end
-            expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
-          end.not_to make_database_queries(matching: /lock_timeout/i)
         end
       end
     end
