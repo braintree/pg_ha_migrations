@@ -185,7 +185,7 @@ module PgHaMigrations
     attr_reader :raw_set
 
     delegate :each, to: :raw_set
-    delegate :mode, to: :first, allow_nil: true
+    delegate :mode, to: :first
 
     def self.from_table_names(tables, mode=nil)
       new(tables) { |table| Table.from_table_name(table, mode) }
@@ -193,6 +193,14 @@ module PgHaMigrations
 
     def initialize(tables, &blk)
       @raw_set = tables.map(&blk).to_set
+
+      if raw_set.empty?
+        raise ArgumentError, "Expected a non-empty list of tables"
+      end
+
+      if raw_set.uniq(&:mode).size > 1
+        raise ArgumentError, "Expected all tables in collection to have the same lock mode"
+      end
     end
 
     def subset?(other)
