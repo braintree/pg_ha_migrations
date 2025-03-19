@@ -94,7 +94,11 @@ module PgHaMigrations
     end
 
     def eql?(other)
-      mode == other.mode
+      other.is_a?(LockMode) && mode == other.mode
+    end
+
+    def ==(other)
+      eql?(other)
     end
 
     def hash

@@ -29,7 +29,7 @@ module PgHaMigrations
     end
 
     def conflicts_with?(other)
-      self.eql?(other) && (
+      eql?(other) && (
         mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
       )
     end
@@ -40,6 +40,10 @@ module PgHaMigrations
     # To also compare lock modes, #conflicts_with? is used.
     def eql?(other)
       other.is_a?(Relation) && hash == other.hash
+    end
+
+    def ==(other)
+      eql?(other)
     end
 
     def hash
