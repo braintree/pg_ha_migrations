@@ -594,7 +594,10 @@ module PgHaMigrations::SafeStatements
           end
           successfully_acquired_lock = true
         rescue ActiveRecord::StatementInvalid => e
-          if e.message =~ /PG::QueryCanceled.+ statement timeout/
+          # It is still possible to hit a lock timeout if the session has
+          # that value set to something less than LOCK_TIMEOUT_SECONDS.
+          # We should retry when either of these exceptions are raised.
+          if e.message =~ /PG::LockNotAvailable.+ lock timeout/ || e.message =~ /PG::QueryCanceled.+ statement timeout/
             sleep_seconds = PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS
             say "Timed out trying to acquire #{target_tables.mode.to_sql} lock on #{target_tables.to_sql}."
             say "Sleeping for #{sleep_seconds}s to allow potentially queued up queries to finish before continuing."
