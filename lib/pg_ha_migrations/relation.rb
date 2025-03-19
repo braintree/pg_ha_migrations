@@ -1,4 +1,8 @@
 module PgHaMigrations
+  # This object represents a pointer to an actual relation in Postgres.
+  # The mode attribute is optional metadata which can represent a lock
+  # that has already been acquired or a potential lock that we are
+  # looking to acquire.
   Relation = Struct.new(:name, :schema, :mode) do
     def self.connection
       ActiveRecord::Base.connection
@@ -13,12 +17,6 @@ module PgHaMigrations
       self.mode = LockMode.new(mode) if mode.present?
     end
 
-    def conflicts_with?(other)
-      self == other && (
-        mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
-      )
-    end
-
     def fully_qualified_name
       @fully_qualified_name ||= [
         PG::Connection.quote_ident(schema),
@@ -30,8 +28,26 @@ module PgHaMigrations
       name.present? && schema.present?
     end
 
+    def conflicts_with?(other)
+      eql?(other) && (
+        mode.nil? || other.mode.nil? || mode.conflicts_with?(other.mode)
+      )
+    end
+
+    # Some code paths need to compare lock modes, while others just need
+    # to determine if the relation is the same object in Postgres, so
+    # equality here is simply looking at the relation name / schema.
+    # To also compare lock modes, #conflicts_with? is used.
+    def eql?(other)
+      other.is_a?(Relation) && hash == other.hash
+    end
+
     def ==(other)
-      other.is_a?(Relation) && name == other.name && schema == other.schema
+      eql?(other)
+    end
+
+    def hash
+      [name, schema].hash
     end
   end
 
@@ -164,6 +180,47 @@ module PgHaMigrations
           AND pg_namespace.nspname = #{connection.quote(schema)}
           AND pg_class.relname = #{connection.quote(name)}
       SQL
+    end
+  end
+
+  class TableCollection
+    include Enumerable
+
+    attr_reader :raw_set
+
+    delegate :each, to: :raw_set
+    delegate :mode, to: :first
+
+    def self.from_table_names(tables, mode=nil)
+      new(tables) { |table| Table.from_table_name(table, mode) }
+    end
+
+    def initialize(tables, &blk)
+      @raw_set = tables.map(&blk).to_set
+
+      if raw_set.empty?
+        raise ArgumentError, "Expected a non-empty list of tables"
+      end
+
+      if raw_set.uniq(&:mode).size > 1
+        raise ArgumentError, "Expected all tables in collection to have the same lock mode"
+      end
+    end
+
+    def subset?(other)
+      raw_set.subset?(other.raw_set)
+    end
+
+    def to_sql
+      map(&:fully_qualified_name).join(", ")
+    end
+
+    def with_partitions
+      tables = flat_map do |table|
+        table.partitions(include_sub_partitions: true, include_self: true)
+      end
+
+      self.class.new(tables)
     end
   end
 end

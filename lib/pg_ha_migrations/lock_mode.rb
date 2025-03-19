@@ -93,6 +93,18 @@ module PgHaMigrations
       MODE_CONFLICTS.keys.index(mode) <=> MODE_CONFLICTS.keys.index(other.mode)
     end
 
+    def eql?(other)
+      other.is_a?(LockMode) && mode == other.mode
+    end
+
+    def ==(other)
+      eql?(other)
+    end
+
+    def hash
+      mode.hash
+    end
+
     def conflicts_with?(other)
       MODE_CONFLICTS[mode].include?(other.mode)
     end

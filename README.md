@@ -451,7 +451,7 @@ safe_partman_reapply_privileges :table
 
 #### safely\_acquire\_lock\_for\_table
 
-Acquires a lock on a table using the following algorithm:
+Acquires a lock (in `ACCESS EXCLUSIVE` mode by default) on a table using the following algorithm:
 
 1. Verify that no long-running queries are using the table.
     - If long-running queries are currently using the table, sleep `PgHaMigrations::LOCK_TIMEOUT_SECONDS` and check again.
@@ -459,15 +459,13 @@ Acquires a lock on a table using the following algorithm:
     - If the lock is not acquired, sleep `PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER * PgHaMigrations::LOCK_TIMEOUT_SECONDS`, and start again at step 1.
 3. If the lock is acquired, proceed to run the given block.
 
-Safely acquire an access exclusive lock for a table.
-
 ```ruby
 safely_acquire_lock_for_table(:table) do
   ...
 end
 ```
 
-Safely acquire a lock for a table in a different mode.
+Safely acquire a lock on a table in `SHARE` mode.
 
 ```ruby
 safely_acquire_lock_for_table(:table, mode: :share) do
@@ -475,10 +473,18 @@ safely_acquire_lock_for_table(:table, mode: :share) do
 end
 ```
 
+Safely acquire a lock on multiple tables in `EXCLUSIVE` mode.
+
+```ruby
+safely_acquire_lock_for_table(:table_a, :table_b, mode: :exclusive) do
+  ...
+end
+```
+
 Note:
 
-We enforce that only one table (or a table and its partitions) can be locked at a time.
-Attempting to acquire a nested lock on a different table will result in an error.
+We enforce that only one set of tables can be locked at a time.
+Attempting to acquire a nested lock on a different set of tables will result in an error.
 
 #### adjust\_lock\_timeout
 
