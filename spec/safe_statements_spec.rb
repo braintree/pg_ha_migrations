@@ -2365,6 +2365,45 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
           end
 
+          it "create an index with nulls_not_distinct option" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, nulls_not_distinct: true
+              end
+            end
+
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
+            end
+
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            aggregate_failures do
+              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+
+              expect(tables_with_indexes.size).to eq(11)
+
+              tables_with_indexes.each do |table|
+                indexes = ActiveRecord::Base.connection.indexes(table)
+
+                expect(indexes.size).to eq(1)
+                expect(indexes.first).to have_attributes(
+                  table: table,
+                  name: "index_#{table}_on_updated_at",
+                  columns: ["updated_at"],
+                  using: :btree,
+                  nulls_not_distinct: true,
+                )
+              end
+            end
+          end
+
           it "raises error when parent index name is too large" do
             create_range_partitioned_table(:foos3, migration_klass)
 
