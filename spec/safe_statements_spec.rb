@@ -2533,35 +2533,81 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
               end
 
+              # Count child partitions to know exactly how many times the method will be called
+              child_tables = partitions_for_table(:foos3)
+              # +1 for the parent table itself
+              expected_calls = child_tables.size + 1
+
               # Check that we pass the nulls_not_distinct option to the underlying add_index method
+              # exactly the right number of times (once for parent table + once for each child partition)
               expect(ActiveRecord::Base.connection).to receive(:add_index).with(
                 anything,
                 anything,
                 hash_including(nulls_not_distinct: true)
-              ).at_least(:once).and_call_original
+              ).exactly(expected_calls).times.and_call_original
 
-              aggregate_failures do
-                expect { test_migration.suppress_messages { test_migration.migrate(:up) } }.not_to raise_error
+              test_migration.suppress_messages { test_migration.migrate(:up) }
 
-                # Verify the nulls_not_distinct property is actually set on the created indexes
-                tables_with_indexes = partitions_for_table(:foos3).unshift(:foos3)
+              # Verify the nulls_not_distinct property is actually set on the created indexes
+              tables_with_indexes = partitions_for_table(:foos3).unshift(:foos3)
 
-                tables_with_indexes.each do |table|
-                  # Query PostgreSQL's system tables to confirm nulls_not_distinct is set
-                  nulls_not_distinct = ActiveRecord::Base.connection.select_value(<<~SQL)
-                    SELECT indnullsnotdistinct
-                    FROM pg_index
-                    JOIN pg_class idx ON pg_index.indexrelid = idx.oid
-                    JOIN pg_class tbl ON pg_index.indrelid = tbl.oid
-                    WHERE tbl.relname = '#{table}'
-                    AND idx.relname LIKE 'index_%_on_text_column%'
-                  SQL
+              tables_with_indexes.each do |table|
+                index_name = "index_#{table}_on_text_column"
+                index_def = ActiveRecord::Base.connection.indexes(table).find { |idx| idx.name == index_name }
 
-                  expect(nulls_not_distinct).to be_truthy,
-                    "Index on table '#{table}' does not have nulls_not_distinct set"
-                end
+                expect(index_def).to be_present
+                expect(index_def.nulls_not_distinct).to be(true),
+                  "Index '#{index_name}' on table '#{table}' does not have nulls_not_distinct set"
               end
             end
+          end
+
+          it "raises error when nulls_not_distinct is provided but ActiveRecord < 7.1" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index(
+                  :foos3,
+                  :text_column,
+                  nulls_not_distinct: true
+                )
+              end
+            end
+
+            # Temporarily mock the ActiveRecord version to be < 7.1
+            allow(ActiveRecord).to receive(:gem_version).and_return(Gem::Version.new("7.0.0"))
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::InvalidMigrationError,
+              "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
+            )
+          end
+
+          it "raises error when nulls_not_distinct is provided but PostgreSQL < 15" do
+            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index(
+                  :foos3,
+                  :text_column,
+                  nulls_not_distinct: true
+                )
+              end
+            end
+
+            # Temporarily mock the PostgreSQL version to be < 15
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(14_00_00)
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::InvalidMigrationError,
+              "nulls_not_distinct option requires PostgreSQL 15 or higher"
+            )
           end
         end
 

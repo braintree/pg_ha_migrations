@@ -220,6 +220,15 @@ module PgHaMigrations::SafeStatements
     comment: nil,
     nulls_not_distinct: nil
   )
+    # Check if nulls_not_distinct was provided but not supported
+    if !nulls_not_distinct.nil? && ActiveRecord.gem_version < Gem::Version.new("7.1")
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
+    end
+
+    # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
+    if !nulls_not_distinct.nil? && ActiveRecord::Base.connection.postgresql_version < 15_00_00
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
+    end
 
     if ActiveRecord::Base.connection.postgresql_version < 11_00_00
       raise PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11"
@@ -255,8 +264,8 @@ module PgHaMigrations::SafeStatements
         algorithm: :only, # see lib/pg_ha_migrations/hacks/add_index_on_only.rb
       }
 
-      # Only include nulls_not_distinct option when supported by ActiveRecord
-      options[:nulls_not_distinct] = nulls_not_distinct if ActiveRecord.gem_version >= Gem::Version.new("7.1") && !nulls_not_distinct.nil?
+      # Only include nulls_not_distinct option when supported (we already checked at the top of the method)
+      options[:nulls_not_distinct] = nulls_not_distinct unless nulls_not_distinct.nil?
 
       unsafe_add_index(
         parent_table.fully_qualified_name,
@@ -280,8 +289,8 @@ module PgHaMigrations::SafeStatements
         where: where,
       }
 
-      # Only include nulls_not_distinct option when supported by ActiveRecord
-      options[:nulls_not_distinct] = nulls_not_distinct if ActiveRecord.gem_version >= Gem::Version.new("7.1") && !nulls_not_distinct.nil?
+      # Only include nulls_not_distinct option when supported (we already checked at the top of the method)
+      options[:nulls_not_distinct] = nulls_not_distinct unless nulls_not_distinct.nil?
 
       send(
         add_index_method,
