@@ -217,7 +217,8 @@ module PgHaMigrations::SafeStatements
     using: nil,
     unique: nil,
     where: nil,
-    comment: nil
+    comment: nil,
+    nulls_not_distinct: nil
   )
 
     if ActiveRecord::Base.connection.postgresql_version < 11_00_00
@@ -253,6 +254,7 @@ module PgHaMigrations::SafeStatements
         unique: unique,
         where: where,
         comment: comment,
+        nulls_not_distinct: nulls_not_distinct,
         algorithm: :only, # see lib/pg_ha_migrations/hacks/add_index_on_only.rb
       )
     end
@@ -273,6 +275,7 @@ module PgHaMigrations::SafeStatements
         using: using,
         unique: unique,
         where: where,
+        nulls_not_distinct: nulls_not_distinct,
       )
     end
 
