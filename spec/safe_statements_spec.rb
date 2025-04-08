@@ -2519,45 +2519,47 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error(PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11")
           end
 
-          it "creates valid index with nulls_not_distinct when multiple child partitions exist" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+          if ActiveRecord.gem_version >= Gem::Version.new("7.1") && ActiveRecord::Base.connection.postgresql_version >= 15_00_00
+            it "creates valid index with nulls_not_distinct when multiple child partitions exist" do
+              create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_concurrent_partitioned_index(
-                  :foos3,
-                  :text_column,
-                  nulls_not_distinct: true
-                )
+              test_migration = Class.new(migration_klass) do
+                def up
+                  safe_add_concurrent_partitioned_index(
+                    :foos3,
+                    :text_column,
+                    nulls_not_distinct: true
+                  )
+                end
               end
-            end
 
-            # Check that we pass the nulls_not_distinct option to the underlying add_index method
-            expect(ActiveRecord::Base.connection).to receive(:add_index).with(
-              anything,
-              anything,
-              hash_including(nulls_not_distinct: true)
-            ).at_least(:once).and_call_original
+              # Check that we pass the nulls_not_distinct option to the underlying add_index method
+              expect(ActiveRecord::Base.connection).to receive(:add_index).with(
+                anything,
+                anything,
+                hash_including(nulls_not_distinct: true)
+              ).at_least(:once).and_call_original
 
-            aggregate_failures do
-              expect { test_migration.suppress_messages { test_migration.migrate(:up) } }.not_to raise_error
+              aggregate_failures do
+                expect { test_migration.suppress_messages { test_migration.migrate(:up) } }.not_to raise_error
 
-              # Verify the nulls_not_distinct property is actually set on the created indexes
-              tables_with_indexes = partitions_for_table(:foos3).unshift(:foos3)
+                # Verify the nulls_not_distinct property is actually set on the created indexes
+                tables_with_indexes = partitions_for_table(:foos3).unshift(:foos3)
 
-              tables_with_indexes.each do |table|
-                # Query PostgreSQL's system tables to confirm nulls_not_distinct is set
-                nulls_not_distinct = ActiveRecord::Base.connection.select_value(<<~SQL)
-                  SELECT indnullsnotdistinct
-                  FROM pg_index
-                  JOIN pg_class idx ON pg_index.indexrelid = idx.oid
-                  JOIN pg_class tbl ON pg_index.indrelid = tbl.oid
-                  WHERE tbl.relname = '#{table}'
-                  AND idx.relname LIKE 'index_%_on_text_column%'
-                SQL
+                tables_with_indexes.each do |table|
+                  # Query PostgreSQL's system tables to confirm nulls_not_distinct is set
+                  nulls_not_distinct = ActiveRecord::Base.connection.select_value(<<~SQL)
+                    SELECT indnullsnotdistinct
+                    FROM pg_index
+                    JOIN pg_class idx ON pg_index.indexrelid = idx.oid
+                    JOIN pg_class tbl ON pg_index.indrelid = tbl.oid
+                    WHERE tbl.relname = '#{table}'
+                    AND idx.relname LIKE 'index_%_on_text_column%'
+                  SQL
 
-                expect(nulls_not_distinct).to be_truthy,
-                  "Index on table '#{table}' does not have nulls_not_distinct set"
+                  expect(nulls_not_distinct).to be_truthy,
+                    "Index on table '#{table}' does not have nulls_not_distinct set"
+                end
               end
             end
           end

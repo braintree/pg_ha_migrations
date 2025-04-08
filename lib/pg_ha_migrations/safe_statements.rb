@@ -245,17 +245,23 @@ module PgHaMigrations::SafeStatements
     # TODO: take out ShareLock after issue #39 is implemented
     safely_acquire_lock_for_table(parent_table.fully_qualified_name) do
       # CREATE INDEX ON ONLY parent_table
-      unsafe_add_index(
-        parent_table.fully_qualified_name,
-        columns,
+      options = {
         name: parent_index.name,
         if_not_exists: if_not_exists,
         using: using,
         unique: unique,
         where: where,
         comment: comment,
-        nulls_not_distinct: nulls_not_distinct,
         algorithm: :only, # see lib/pg_ha_migrations/hacks/add_index_on_only.rb
+      }
+
+      # Only include nulls_not_distinct option when supported by ActiveRecord
+      options[:nulls_not_distinct] = nulls_not_distinct if ActiveRecord.gem_version >= Gem::Version.new("7.1") && !nulls_not_distinct.nil?
+
+      unsafe_add_index(
+        parent_table.fully_qualified_name,
+        columns,
+        **options
       )
     end
 
@@ -266,16 +272,22 @@ module PgHaMigrations::SafeStatements
         :safe_add_concurrent_index
       end
 
-      send(
-        add_index_method,
-        child_index.table.fully_qualified_name,
-        columns,
+      options = {
         name: child_index.name,
         if_not_exists: if_not_exists,
         using: using,
         unique: unique,
         where: where,
-        nulls_not_distinct: nulls_not_distinct,
+      }
+
+      # Only include nulls_not_distinct option when supported by ActiveRecord
+      options[:nulls_not_distinct] = nulls_not_distinct if ActiveRecord.gem_version >= Gem::Version.new("7.1") && !nulls_not_distinct.nil?
+
+      send(
+        add_index_method,
+        child_index.table.fully_qualified_name,
+        columns,
+        **options
       )
     end
 
