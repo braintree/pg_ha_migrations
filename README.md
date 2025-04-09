@@ -572,6 +572,8 @@ Rake::Task["pg_ha_migrations:check_blocking_database_transactions"].enhance ["db
 
 After checking out the repo, run `bin/setup` to install dependencies and start a postgres docker container. Then, run `bundle exec rspec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment. This project uses Appraisal to test against multiple versions of ActiveRecord; you can run the tests against all supported version with `bundle exec appraisal rspec`.
 
+> **Warning**: If you rebuild the Docker container _without_ using `docker-compose build` (or the `--build` flag), it will not respect the `PGVERSION` environment variable that you've set if image layers from a different version exist. The Dockerfile uses a build-time argument that's only evaluated during the initial build. To change the Postgres version, you should explicitly provide the build argument: `docker-compose build --build-arg PGVERSION=15`. **Using `bin/setup` handles this for you.**
+
 Running tests will automatically create a test database in the locally running Postgres server. You can find the connection parameters in `spec/spec_helper.rb`, but setting the environment variables `PGHOST`, `PGPORT`, `PGUSER`, and `PGPASSWORD` will override the defaults.
 
 To install this gem onto your local machine, run `bundle exec rake install`.
