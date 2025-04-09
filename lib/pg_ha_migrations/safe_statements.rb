@@ -182,6 +182,16 @@ module PgHaMigrations::SafeStatements
       raise ArgumentError, "Cannot call safe_add_index_on_empty_table with :algorithm => :concurrently"
     end
 
+    # Check if nulls_not_distinct was provided but not supported
+    if options[:nulls_not_distinct] && ActiveRecord.gem_version < Gem::Version.new("7.1")
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
+    end
+
+    # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
+    if options[:nulls_not_distinct] && ActiveRecord::Base.connection.postgresql_version < 15_00_00
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
+    end
+
     # Avoids taking out an unnecessary SHARE lock if the table does have data
     ensure_small_table!(table, empty: true)
 
@@ -194,6 +204,16 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_add_concurrent_index(table, columns, options={})
+    # Check if nulls_not_distinct was provided but not supported
+    if options[:nulls_not_distinct] && ActiveRecord.gem_version < Gem::Version.new("7.1")
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
+    end
+
+    # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
+    if options[:nulls_not_distinct] && ActiveRecord::Base.connection.postgresql_version < 15_00_00
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
+    end
+
     unsafe_add_index(table, columns, **options.merge(:algorithm => :concurrently))
   end
 

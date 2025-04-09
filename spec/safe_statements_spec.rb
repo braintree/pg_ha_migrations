@@ -1738,6 +1738,60 @@ RSpec.describe PgHaMigrations::SafeStatements do
             indexes = ActiveRecord::Base.connection.indexes("foos")
             expect(indexes).to be_empty
           end
+
+          it "raises error when nulls_not_distinct is provided but ActiveRecord < 7.1" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_index_on_empty_table :foos, :bar, nulls_not_distinct: true
+              end
+            end
+
+            # Temporarily mock the ActiveRecord version to be < 7.1
+            allow(ActiveRecord).to receive(:gem_version).and_return(Gem::Version.new("7.0.0"))
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::InvalidMigrationError,
+              "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
+            )
+          end
+
+          it "raises error when nulls_not_distinct is provided but PostgreSQL < 15" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_index_on_empty_table :foos, :bar, nulls_not_distinct: true
+              end
+            end
+
+            # Temporarily mock the PostgreSQL version to be < 15
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(14_00_00)
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::InvalidMigrationError,
+              "nulls_not_distinct option requires PostgreSQL 15 or higher"
+            )
+          end
         end
 
         describe "safe_add_concurrent_index" do
@@ -1794,6 +1848,60 @@ RSpec.describe PgHaMigrations::SafeStatements do
               table: "x" * 51,
               name: "idx_on_bar_d7a594ad66",
               columns: ["bar"],
+            )
+          end
+
+          it "raises error when nulls_not_distinct is provided but ActiveRecord < 7.1" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_index :foos, :bar, nulls_not_distinct: true
+              end
+            end
+
+            # Temporarily mock the ActiveRecord version to be < 7.1
+            allow(ActiveRecord).to receive(:gem_version).and_return(Gem::Version.new("7.0.0"))
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::InvalidMigrationError,
+              "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
+            )
+          end
+
+          it "raises error when nulls_not_distinct is provided but PostgreSQL < 15" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                safe_create_table :foos
+                safe_add_column :foos, :bar, :text
+              end
+            end
+
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_index :foos, :bar, nulls_not_distinct: true
+              end
+            end
+
+            # Temporarily mock the PostgreSQL version to be < 15
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(14_00_00)
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(
+              PgHaMigrations::InvalidMigrationError,
+              "nulls_not_distinct option requires PostgreSQL 15 or higher"
             )
           end
         end
