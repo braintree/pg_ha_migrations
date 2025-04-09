@@ -9,4 +9,6 @@ bundle exec appraisal install
 # Do any other automated setup that you need to do here
 
 # Launch a blank postgres image with partman for testing
-docker compose up -d --build
+# Because the Postgres image volumizes by default, we have to reset the volumes
+# or launching the setup with different PGVERSION env vars will fail.
+docker compose up -d --build --renew-anon-volumes

@@ -574,6 +574,8 @@ After checking out the repo, run `bin/setup` to install dependencies and start a
 
 > **Warning**: If you rebuild the Docker container _without_ using `docker-compose build` (or the `--build` flag), it will not respect the `PGVERSION` environment variable that you've set if image layers from a different version exist. The Dockerfile uses a build-time argument that's only evaluated during the initial build. To change the Postgres version, you should explicitly provide the build argument: `docker-compose build --build-arg PGVERSION=15`. **Using `bin/setup` handles this for you.**
 
+> **Warning**: The Postgres Dockerfile automatically creates an anonymous volume for the data directory. When changing the specified `PGVERSION` environment variable this volume must be reset using `--renew-anon-volumes` or booting Postgres will fail.  **Using `bin/setup` handles this for you.**
+
 Running tests will automatically create a test database in the locally running Postgres server. You can find the connection parameters in `spec/spec_helper.rb`, but setting the environment variables `PGHOST`, `PGPORT`, `PGUSER`, and `PGPASSWORD` will override the defaults.
 
 To install this gem onto your local machine, run `bundle exec rake install`.
