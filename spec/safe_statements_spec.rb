@@ -705,7 +705,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        context "delegated unsafe methods" do
+        context "delegated unsafe methods (deprecated for the next phase)" do
           it "renames create_table to unsafe_create_table" do
             migration = Class.new(migration_klass) do
               def up
@@ -716,33 +716,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration.suppress_messages { migration.migrate(:up) }
 
             expect(ActiveRecord::Base.connection.tables).to include("foos")
-          end
-
-          it "renames drop_table to unsafe_drop_table" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-                unsafe_drop_table :foos
-              end
-            end
-
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(ActiveRecord::Base.connection.tables).not_to include("foos")
-          end
-
-          it "renames add_column to unsafe_add_column" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-                unsafe_add_column :foos, :bar, :integer
-              end
-            end
-
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(ActiveRecord::Base.connection.tables).to include("foos")
-            expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("bar")
           end
 
           it "renames change_table to unsafe_change_table" do
@@ -760,33 +733,53 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("bar")
           end
 
-          it "renames rename_table to unsafe_rename_table" do
+          it "renames add_index to unsafe_add_index" do
             migration = Class.new(migration_klass) do
               def up
-                unsafe_create_table :foos
-                unsafe_rename_table :foos, :bars
+                unsafe_create_table(:foos) { |t| t.string :bar }
+                unsafe_add_index :foos, :bar
               end
             end
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection.tables).not_to include("foos")
-            expect(ActiveRecord::Base.connection.tables).to include("bars")
+            expect(ActiveRecord::Base.connection.indexes("foos").map(&:columns)).to include(["bar"])
           end
 
-          it "renames rename_column to unsafe_rename_column" do
+          it "renames remove_index to unsafe_remove_index" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table(:foos) { |t| t.string :bar }
-                unsafe_rename_column :foos, :bar, :baz
+                unsafe_add_index :foos, :bar
+              end
+            end
+            migration.suppress_messages { migration.migrate(:up) }
+            expect(ActiveRecord::Base.connection.indexes("foos").map(&:columns)).to include(["bar"])
+
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_index :foos, :bar
+              end
+            end
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.indexes("foos").map(&:columns)).not_to include(["bar"])
+          end
+        end
+
+        context "delegated unsafe methods" do
+          it "renames add_column to unsafe_add_column" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :integer
               end
             end
 
             migration.suppress_messages { migration.migrate(:up) }
 
             expect(ActiveRecord::Base.connection.tables).to include("foos")
-            expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).not_to include("bar")
-            expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("baz")
+            expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("bar")
           end
 
           it "renames change_column to unsafe_change_column" do
@@ -815,17 +808,32 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).not_to include("bar")
           end
 
-          it "renames add_index to unsafe_add_index" do
+          it "renames rename_column to unsafe_rename_column" do
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table(:foos) { |t| t.string :bar }
-                unsafe_add_index :foos, :bar
+                unsafe_rename_column :foos, :bar, :baz
               end
             end
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection.indexes("foos").map(&:columns)).to include(["bar"])
+            expect(ActiveRecord::Base.connection.tables).to include("foos")
+            expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).not_to include("bar")
+            expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("baz")
+          end
+
+          it "renames drop_table to unsafe_drop_table" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_drop_table :foos
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.tables).not_to include("foos")
           end
 
           it "renames execute to unsafe_execute" do
@@ -840,26 +848,19 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.tables).to include("foos")
           end
 
-          it "renames remove_index to unsafe_remove_index" do
+          it "renames rename_table to unsafe_rename_table" do
             migration = Class.new(migration_klass) do
               def up
-                unsafe_create_table(:foos) { |t| t.string :bar }
-                unsafe_add_index :foos, :bar
+                unsafe_create_table :foos
+                unsafe_rename_table :foos, :bars
               end
             end
-            migration.suppress_messages { migration.migrate(:up) }
-            expect(ActiveRecord::Base.connection.indexes("foos").map(&:columns)).to include(["bar"])
 
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_remove_index :foos, :bar
-              end
-            end
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(ActiveRecord::Base.connection.indexes("foos").map(&:columns)).not_to include(["bar"])
+            expect(ActiveRecord::Base.connection.tables).not_to include("foos")
+            expect(ActiveRecord::Base.connection.tables).to include("bars")
           end
-
         end
 
         describe "disabling `force: true`" do
