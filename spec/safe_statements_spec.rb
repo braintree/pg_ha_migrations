@@ -542,7 +542,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        context "raw methods" do
+        context "delegated raw methods" do
           it "does not raise when using raw_create_table method" do
             migration = Class.new(migration_klass) do
               def up
@@ -1057,7 +1057,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "unsafe_partman_update_config" do
+        describe "#unsafe_partman_update_config" do
           context "when extension not installed" do
             it "raises error" do
               migration = Class.new(migration_klass) do
@@ -1223,7 +1223,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
       end
 
       describe PgHaMigrations::SafeStatements do
-        describe "safe_create_table" do
+        describe "#safe_create_table" do
           # This test is also particularly helpful for exposing issues
           # with inheritance from the compatibilty hierarchy, but we
           # have targeted tests for that also.
@@ -1330,7 +1330,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_add_column" do
+        describe "#safe_add_column" do
           it "allows setting a default on Postgres 11+" do
             migration = Class.new(migration_klass) do
               def up
@@ -1444,7 +1444,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_change_column_default" do
+        describe "#safe_change_column_default" do
           it "sets default value of a text column" do
             migration = Class.new(migration_klass) do
               def up
@@ -1787,7 +1787,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_make_column_nullable" do
+        describe "#safe_make_column_nullable" do
           it "removes the not null constraint from the column" do
             migration = Class.new(migration_klass) do
               def up
@@ -1811,7 +1811,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_make_column_not_nullable" do
+        describe "#safe_make_column_not_nullable" do
           it "adds the not null constraint to the column" do
             setup_migration = Class.new(migration_klass) do
               def up
@@ -1903,7 +1903,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_set_maintenance_work_mem_gb" do
+        describe "#safe_set_maintenance_work_mem_gb" do
           it "sets the maintenance work memory for building indexes" do
             begin
               migration = Class.new(migration_klass) do
@@ -1933,7 +1933,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             ActiveRecord::Base.connection.execute(statement).to_a
           end
 
-          describe "safe_create_enum_type" do
+          describe "#safe_create_enum_type" do
             it "creates a new enum type" do
               migration = Class.new(migration_klass) do
                 def up
@@ -1994,7 +1994,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          describe "safe_add_enum_value" do
+          describe "#safe_add_enum_value" do
             it "creates a new enum value" do
               migration = Class.new(migration_klass) do
                 def up
@@ -2015,7 +2015,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          describe "unsafe_rename_enum_value" do
+          describe "#unsafe_rename_enum_value" do
             it "renames a enum value on 10+" do
               migration = Class.new(migration_klass) do
                 def up
@@ -2050,7 +2050,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "unsafe_make_column_not_nullable" do
+        describe "#unsafe_make_column_not_nullable" do
           it "make the column not nullable which will cause the table to be locked" do
             migration = Class.new(migration_klass) do
               def up
@@ -2138,7 +2138,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_add_index_on_empty_table" do
+        describe "#safe_add_index_on_empty_table" do
           it "creates index when table is empty" do
             setup_migration = Class.new(migration_klass) do
               def up
@@ -2273,7 +2273,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_add_concurrent_index" do
+        describe "#safe_add_concurrent_index" do
           it "creates an index using the concurrent algorithm" do
             setup_migration = Class.new(migration_klass) do
               def up
@@ -2331,7 +2331,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_add_concurrent_partitioned_index" do
+        describe "#safe_add_concurrent_partitioned_index" do
           before do
             ActiveRecord::Base.connection.execute(<<~SQL)
               CREATE SCHEMA partman;
@@ -3053,7 +3053,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_remove_concurrent_index" do
+        describe "#safe_remove_concurrent_index" do
           it "removes an index using the concurrent algorithm" do
             setup_migration = Class.new(migration_klass) do
               def up
@@ -3388,7 +3388,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_create_partitioned_table" do
+        describe "#safe_create_partitioned_table" do
           it "creates range partition on supported versions" do
             migration = Class.new(migration_klass) do
               def up
@@ -3732,7 +3732,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_partman_create_parent" do
+        describe "#safe_partman_create_parent" do
           context "when extension not installed" do
             it "raises error" do
               create_range_partitioned_table(:foos3, migration_klass)
@@ -4076,7 +4076,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_partman_update_config" do
+        describe "#safe_partman_update_config" do
           it "raises error when retention is set" do
             migration = Class.new(migration_klass).new
 
@@ -4112,7 +4112,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "safe_partman_reapply_privileges" do
+        describe "#safe_partman_reapply_privileges" do
           context "when extension not installed" do
             it "raises error" do
               migration = Class.new(migration_klass) do
@@ -4356,7 +4356,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
       end
     end
 
-    describe "ensure_small_table!" do
+    describe "#ensure_small_table!" do
       it "does not raise error when empty: false and table is below threshold and has rows" do
         setup_migration = Class.new(migration_klass) do
           def up
