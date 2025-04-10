@@ -4014,6 +4014,27 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "unsafe transformations" do
+          it "renames add_check_constraint to unsafe_add_check_constraint" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table(:foos) { |t| t.integer :bar }
+                unsafe_add_check_constraint :foos, "bar > 0", name: :constraint_foo_bar_is_positive
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            constraint_name, constraint_validated, constraint_expression = ActiveRecord::Base.tuple_from_sql(<<~SQL)
+              SELECT conname, convalidated, pg_get_constraintdef(oid)
+              FROM pg_constraint
+              WHERE conrelid = 'foos'::regclass AND contype != 'p'
+            SQL
+
+            expect(constraint_name).to eq("constraint_foo_bar_is_positive")
+            expect(constraint_validated).to eq(true)
+            expect(constraint_expression).to eq("CHECK ((bar > 0))")
+          end
+
           it "renames create_table to unsafe_create_table" do
             migration = Class.new(migration_klass) do
               def up
@@ -4051,6 +4072,48 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect(ActiveRecord::Base.connection.tables).to include("foos")
             expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("bar")
+          end
+
+          it "renames change_column_default to unsafe_change_column_default" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table(:foos) { |t| t.integer :bar }
+                unsafe_change_column_default :foos, :bar, 5
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq("5")
+          end
+
+          it "renames remove_check_constraint to unsafe_remove_check_constraint" do
+            skip "Turns out the raw_remove_check_constraint fix for Rails 7 didn't work anyway" if ActiveRecord.gem_version < Gem::Version.new("7.1")
+
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table(:foos) { |t| t.integer :bar }
+                unsafe_add_check_constraint :foos, "bar > 0", name: "constraint_foo_bar_is_positive"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_check_constraint :foos, name: :constraint_foo_bar_is_positive
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.select_value(<<~SQL)).to eq(false)
+              SELECT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conrelid = 'foos'::regclass AND contype != 'p'
+              )
+            SQL
           end
 
           it "renames change_table to unsafe_change_table" do
