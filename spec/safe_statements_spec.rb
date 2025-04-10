@@ -1068,6 +1068,128 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "#unsafe_rename_enum_value" do
+          it "renames a enum value on 10+" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
+                unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(_select_enum_names_and_values).to contain_exactly(
+              {"name" => "bt_foo_enum", "value" => "one"},
+              {"name" => "bt_foo_enum", "value" => "two"},
+              {"name" => "bt_foo_enum", "value" => "updated"},
+            )
+          end
+
+          it "raises a helpful error on 9.6" do
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
+
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
+                unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, /not supported.+version/)
+          end
+        end
+
+        describe "#unsafe_make_column_not_nullable" do
+          it "make the column not nullable which will cause the table to be locked" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                safe_add_column :foos, :bar, :text
+                unsafe_make_column_not_nullable :foos, :bar, :estimated_rows => 0
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
+          end
+
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.unsafe_make_column_not_nullable(:foos, :bar, :estimated_rows => 0)
+          end
+        end
+
+        describe "#unsafe_remove_constraint" do
+          before(:each) do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.unsafe_remove_constraint(:foos, :name => :constraint_foo_bar_is_not_null)
+          end
+
+          it "drop the constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /ALTER TABLE .+ DROP CONSTRAINT/, count: 1)
+              .and(
+                change do
+                  ActiveRecord::Base.pluck_from_sql <<~SQL
+                    SELECT conname
+                    FROM pg_constraint
+                    WHERE conrelid = 'foos'::regclass AND contype != 'p'
+                  SQL
+                end.from(["constraint_foo_bar_is_not_null"]).to([])
+              )
+          end
+
+          it "raises a helpful error if a name is not passed" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => nil
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <name> to be present")
+          end
+
+          it "outputs the operation" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to output(/remove_constraint\(:foos, name: :constraint_foo_bar_is_not_null\)/m).to_stdout
+          end
+        end
+
         describe "#unsafe_partman_update_config" do
           context "when extension not installed" do
             it "raises error" do
@@ -1914,6 +2036,24 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "#safe_set_maintenance_work_mem_gb" do
+          it "sets the maintenance work memory for building indexes" do
+            begin
+              migration = Class.new(migration_klass) do
+                def up
+                  safe_set_maintenance_work_mem_gb 1
+                end
+              end
+
+              migration.suppress_messages { migration.migrate(:up) }
+
+              expect(ActiveRecord::Base.connection.select_value("SHOW maintenance_work_mem")).to eq("1GB")
+            ensure
+              ActiveRecord::Base.connection.execute("RESET maintenance_work_mem")
+            end
+          end
+        end
+
         describe "#safe_create_enum_type" do
           it "creates a new enum type" do
             migration = Class.new(migration_klass) do
@@ -1993,146 +2133,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
               {"name" => "bt_foo_enum", "value" => "three"},
               {"name" => "bt_foo_enum", "value" => "four"},
             )
-          end
-        end
-
-        describe "#safe_set_maintenance_work_mem_gb" do
-          it "sets the maintenance work memory for building indexes" do
-            begin
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_set_maintenance_work_mem_gb 1
-                end
-              end
-
-              migration.suppress_messages { migration.migrate(:up) }
-
-              expect(ActiveRecord::Base.connection.select_value("SHOW maintenance_work_mem")).to eq("1GB")
-            ensure
-              ActiveRecord::Base.connection.execute("RESET maintenance_work_mem")
-            end
-          end
-        end
-
-        describe "#unsafe_rename_enum_value" do
-          it "renames a enum value on 10+" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
-                unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
-              end
-            end
-
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(_select_enum_names_and_values).to contain_exactly(
-              {"name" => "bt_foo_enum", "value" => "one"},
-              {"name" => "bt_foo_enum", "value" => "two"},
-              {"name" => "bt_foo_enum", "value" => "updated"},
-            )
-          end
-
-          it "raises a helpful error on 9.6" do
-            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
-
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
-                unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
-              end
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, /not supported.+version/)
-          end
-        end
-
-        describe "#unsafe_make_column_not_nullable" do
-          it "make the column not nullable which will cause the table to be locked" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-                safe_add_column :foos, :bar, :text
-                unsafe_make_column_not_nullable :foos, :bar, :estimated_rows => 0
-              end
-            end
-
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.null).to eq(false)
-          end
-
-          it "calls safely_acquire_lock_for_table" do
-            migration = Class.new(migration_klass).new
-
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
-            migration.unsafe_make_column_not_nullable(:foos, :bar, :estimated_rows => 0)
-          end
-        end
-
-        describe "#unsafe_remove_constraint" do
-          before(:each) do
-            setup_migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-                unsafe_add_column :foos, :bar, :text
-                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
-              end
-            end
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-          end
-
-          it "calls safely_acquire_lock_for_table" do
-            migration = Class.new(migration_klass).new
-
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
-            migration.unsafe_remove_constraint(:foos, :name => :constraint_foo_bar_is_not_null)
-          end
-
-          it "drop the constraint" do
-            test_migration = Class.new(migration_klass) do
-              def up
-                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to make_database_queries(matching: /ALTER TABLE .+ DROP CONSTRAINT/, count: 1)
-              .and(
-                change do
-                  ActiveRecord::Base.pluck_from_sql <<~SQL
-                    SELECT conname
-                    FROM pg_constraint
-                    WHERE conrelid = 'foos'::regclass AND contype != 'p'
-                  SQL
-                end.from(["constraint_foo_bar_is_not_null"]).to([])
-              )
-          end
-
-          it "raises a helpful error if a name is not passed" do
-            test_migration = Class.new(migration_klass) do
-              def up
-                unsafe_remove_constraint :foos, :name => nil
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(ArgumentError, "Expected <name> to be present")
-          end
-
-          it "outputs the operation" do
-            test_migration = Class.new(migration_klass) do
-              def up
-                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
-              end
-            end
-
-            expect do
-              test_migration.migrate(:up)
-            end.to output(/remove_constraint\(:foos, name: :constraint_foo_bar_is_not_null\)/m).to_stdout
           end
         end
 
