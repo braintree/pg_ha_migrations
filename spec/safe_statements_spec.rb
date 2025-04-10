@@ -768,6 +768,29 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         context "delegated unsafe methods" do
+          it "renames add_check_constraint to unsafe_add_check_constraint" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table(:foos) { |t| t.integer :bar }
+                unsafe_add_check_constraint :foos, "bar > 0", name: :constraint_foo_bar_is_positive
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to make_database_queries(matching: /LOCK "public"\."foos" IN ACCESS EXCLUSIVE MODE/, count: 1)
+
+            constraint_name, constraint_validated, constraint_expression = ActiveRecord::Base.tuple_from_sql(<<~SQL)
+              SELECT conname, convalidated, pg_get_constraintdef(oid)
+              FROM pg_constraint
+              WHERE conrelid = 'foos'::regclass AND contype != 'p'
+            SQL
+
+            expect(constraint_name).to eq("constraint_foo_bar_is_positive")
+            expect(constraint_validated).to eq(true)
+            expect(constraint_expression).to eq("CHECK ((bar > 0))")
+          end
+
           it "renames add_column to unsafe_add_column" do
             migration = Class.new(migration_klass) do
               def up
@@ -793,6 +816,50 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration.suppress_messages { migration.migrate(:up) }
 
             expect(ActiveRecord::Base.connection.columns("foos").detect { |c| c.name == "bar" }.type).to eq(:text)
+          end
+
+          it "renames change_column_default to unsafe_change_column_default" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table(:foos) { |t| t.integer :bar }
+                unsafe_change_column_default :foos, :bar, 5
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to make_database_queries(matching: /LOCK "public"\."foos" IN ACCESS EXCLUSIVE MODE/, count: 1)
+
+            expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq("5")
+          end
+
+          it "renames remove_check_constraint to unsafe_remove_check_constraint" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table(:foos) { |t| t.integer :bar }
+                unsafe_add_check_constraint :foos, "bar > 0", name: "constraint_foo_bar_is_positive"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_check_constraint :foos, name: :constraint_foo_bar_is_positive
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to make_database_queries(matching: /LOCK "public"\."foos" IN ACCESS EXCLUSIVE MODE/, count: 1)
+
+            expect(ActiveRecord::Base.connection.select_value(<<~SQL)).to eq(false)
+              SELECT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conrelid = 'foos'::regclass AND contype != 'p'
+              )
+            SQL
           end
 
           it "renames remove_column to unsafe_remove_column" do
