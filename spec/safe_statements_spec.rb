@@ -77,6 +77,17 @@ RSpec.describe PgHaMigrations::SafeStatements do
     migration.suppress_messages { migration.migrate(:up) }
   end
 
+  def _select_enum_names_and_values
+    statement = <<-SQL
+      SELECT pg_type.typname AS name,
+             pg_enum.enumlabel AS value
+      FROM pg_type
+      JOIN pg_enum ON pg_enum.enumtypid = pg_type.oid;
+    SQL
+
+    ActiveRecord::Base.connection.execute(statement).to_a
+  end
+
   def pool_config
     if ActiveRecord.gem_version >= Gem::Version.new("7.0")
       ActiveRecord::ConnectionAdapters::PoolConfig.new(
@@ -1903,6 +1914,88 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "#safe_create_enum_type" do
+          it "creates a new enum type" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_enum_type :bt_foo_enum, ["one", "two", "three"]
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            result = _select_enum_names_and_values
+            expect(result).to contain_exactly(
+              {"name" => "bt_foo_enum", "value" => "one"},
+              {"name" => "bt_foo_enum", "value" => "two"},
+              {"name" => "bt_foo_enum", "value" => "three"},
+            )
+          end
+
+          it "can create a new enum type with symbols for values" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_enum_type :bt_foo_enum, [:one, :two, :three]
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            result = _select_enum_names_and_values
+            expect(result).to contain_exactly(
+              {"name" => "bt_foo_enum", "value" => "one"},
+              {"name" => "bt_foo_enum", "value" => "two"},
+              {"name" => "bt_foo_enum", "value" => "three"},
+            )
+          end
+
+          it "can create a new enum type with no values" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_enum_type :bt_foo_enum, []
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            result = _select_enum_names_and_values
+            expect(result).to eq([])
+          end
+
+          it "raises helpfully if no values argument is passed" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_create_enum_type :bt_foo_enum
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(ArgumentError, /empty array/)
+          end
+        end
+
+        describe "#safe_add_enum_value" do
+          it "creates a new enum value" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
+                safe_add_enum_value :bt_foo_enum, "four"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            result = _select_enum_names_and_values
+            expect(result).to contain_exactly(
+              {"name" => "bt_foo_enum", "value" => "one"},
+              {"name" => "bt_foo_enum", "value" => "two"},
+              {"name" => "bt_foo_enum", "value" => "three"},
+              {"name" => "bt_foo_enum", "value" => "four"},
+            )
+          end
+        end
+
         describe "#safe_set_maintenance_work_mem_gb" do
           it "sets the maintenance work memory for building indexes" do
             begin
@@ -1921,132 +2014,37 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe "enums" do
-          def _select_enum_names_and_values
-            statement = <<-SQL
-          SELECT pg_type.typname AS name,
-                 pg_enum.enumlabel AS value
-           FROM pg_type
-           JOIN pg_enum ON pg_enum.enumtypid = pg_type.oid;
-            SQL
+        describe "#unsafe_rename_enum_value" do
+          it "renames a enum value on 10+" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
+                unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
+              end
+            end
 
-            ActiveRecord::Base.connection.execute(statement).to_a
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(_select_enum_names_and_values).to contain_exactly(
+              {"name" => "bt_foo_enum", "value" => "one"},
+              {"name" => "bt_foo_enum", "value" => "two"},
+              {"name" => "bt_foo_enum", "value" => "updated"},
+            )
           end
 
-          describe "#safe_create_enum_type" do
-            it "creates a new enum type" do
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_create_enum_type :bt_foo_enum, ["one", "two", "three"]
-                end
-              end
+          it "raises a helpful error on 9.6" do
+            allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
 
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
+                unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
+              end
+            end
+
+            expect do
               migration.suppress_messages { migration.migrate(:up) }
-
-              result = _select_enum_names_and_values
-              expect(result).to contain_exactly(
-                {"name" => "bt_foo_enum", "value" => "one"},
-                {"name" => "bt_foo_enum", "value" => "two"},
-                {"name" => "bt_foo_enum", "value" => "three"},
-              )
-            end
-
-            it "can create a new enum type with symbols for values" do
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_create_enum_type :bt_foo_enum, [:one, :two, :three]
-                end
-              end
-
-              migration.suppress_messages { migration.migrate(:up) }
-
-              result = _select_enum_names_and_values
-              expect(result).to contain_exactly(
-                {"name" => "bt_foo_enum", "value" => "one"},
-                {"name" => "bt_foo_enum", "value" => "two"},
-                {"name" => "bt_foo_enum", "value" => "three"},
-              )
-            end
-
-            it "can create a new enum type with no values" do
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_create_enum_type :bt_foo_enum, []
-                end
-              end
-
-              migration.suppress_messages { migration.migrate(:up) }
-
-              result = _select_enum_names_and_values
-              expect(result).to eq([])
-            end
-
-            it "raises helpfully if no values argument is passed" do
-              migration = Class.new(migration_klass) do
-                def up
-                  safe_create_enum_type :bt_foo_enum
-                end
-              end
-
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(ArgumentError, /empty array/)
-            end
-          end
-
-          describe "#safe_add_enum_value" do
-            it "creates a new enum value" do
-              migration = Class.new(migration_klass) do
-                def up
-                  unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
-                  safe_add_enum_value :bt_foo_enum, "four"
-                end
-              end
-
-              migration.suppress_messages { migration.migrate(:up) }
-
-              result = _select_enum_names_and_values
-              expect(result).to contain_exactly(
-                {"name" => "bt_foo_enum", "value" => "one"},
-                {"name" => "bt_foo_enum", "value" => "two"},
-                {"name" => "bt_foo_enum", "value" => "three"},
-                {"name" => "bt_foo_enum", "value" => "four"},
-              )
-            end
-          end
-
-          describe "#unsafe_rename_enum_value" do
-            it "renames a enum value on 10+" do
-              migration = Class.new(migration_klass) do
-                def up
-                  unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
-                  unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
-                end
-              end
-
-              migration.suppress_messages { migration.migrate(:up) }
-
-              expect(_select_enum_names_and_values).to contain_exactly(
-                {"name" => "bt_foo_enum", "value" => "one"},
-                {"name" => "bt_foo_enum", "value" => "two"},
-                {"name" => "bt_foo_enum", "value" => "updated"},
-              )
-            end
-
-            it "raises a helpful error on 9.6" do
-              allow(ActiveRecord::Base.connection).to receive(:postgresql_version).and_return(9_06_00)
-
-              migration = Class.new(migration_klass) do
-                def up
-                  unsafe_execute("CREATE TYPE bt_foo_enum AS ENUM ('one', 'two', 'three')")
-                  unsafe_rename_enum_value :bt_foo_enum, "three", "updated"
-                end
-              end
-
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to raise_error(PgHaMigrations::InvalidMigrationError, /not supported.+version/)
-            end
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, /not supported.+version/)
           end
         end
 
