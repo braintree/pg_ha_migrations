@@ -978,6 +978,85 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "#unsafe_add_index" do
+          it "raises a helper warning when ActiveRecord is going to swallow per-column options" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.integer :bar, :limit => 4
+                  t.integer :baz, :limit => 4
+                end
+                unsafe_add_index :foos, "bar, baz", :opclass => :int4_ops
+              end
+            end
+
+            error_matcher_args = if (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR <= 1) || ActiveRecord::VERSION::MAJOR == 4
+              [ArgumentError, /Unknown key: :opclass/]
+            else
+              [PgHaMigrations::InvalidMigrationError, /ActiveRecord drops the :opclass option/]
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(*error_matcher_args)
+          end
+
+          it "demonstrates ActiveRecord still throws away per-column options when passed string" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos do |t|
+                  t.integer :bar, :limit => 4
+                  t.integer :baz, :limit => 4
+                end
+                execute_ancestor_statement(:add_index, :foos, "bar, baz", **{:opclass => {:bar => :int4_ops}})
+              end
+            end
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.not_to make_database_queries(matching: /int4_ops/)
+          end
+
+          it "generates index name with hashed identifier when default index name is too large" do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table "x" * 51
+                unsafe_add_column "x" * 51, :bar, :text
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_index "x" * 51, [:bar]
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /CREATE INDEX "idx_on_bar_d7a594ad66"/, count: 1)
+
+            indexes = ActiveRecord::Base.connection.indexes("x" * 51)
+            expect(indexes.size).to eq(1)
+            expect(indexes.first).to have_attributes(
+              table: "x" * 51,
+              name: "idx_on_bar_d7a594ad66",
+              columns: ["bar"],
+            )
+          end
+
+          it "raises error when table does not exist" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_add_index :foo, :bar
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"foo\" does not exist in search path")
+          end
+        end
+
         describe "unsafe_partman_update_config" do
           context "when extension not installed" do
             it "raises error" do
@@ -1994,6 +2073,71 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "#unsafe_remove_constraint" do
+          before(:each) do
+            setup_migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_add_column :foos, :bar, :text
+                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+          end
+
+          it "calls safely_acquire_lock_for_table" do
+            migration = Class.new(migration_klass).new
+
+            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
+            migration.unsafe_remove_constraint(:foos, :name => :constraint_foo_bar_is_not_null)
+          end
+
+          it "drop the constraint" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to make_database_queries(matching: /ALTER TABLE .+ DROP CONSTRAINT/, count: 1)
+              .and(
+                change do
+                  ActiveRecord::Base.pluck_from_sql <<~SQL
+                    SELECT conname
+                    FROM pg_constraint
+                    WHERE conrelid = 'foos'::regclass AND contype != 'p'
+                  SQL
+                end.from(["constraint_foo_bar_is_not_null"]).to([])
+              )
+          end
+
+          it "raises a helpful error if a name is not passed" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => nil
+              end
+            end
+
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <name> to be present")
+          end
+
+          it "outputs the operation" do
+            test_migration = Class.new(migration_klass) do
+              def up
+                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
+              end
+            end
+
+            expect do
+              test_migration.migrate(:up)
+            end.to output(/remove_constraint\(:foos, name: :constraint_foo_bar_is_not_null\)/m).to_stdout
+          end
+        end
+
         describe "safe_add_index_on_empty_table" do
           it "creates index when table is empty" do
             setup_migration = Class.new(migration_klass) do
@@ -2909,85 +3053,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        describe  "unsafe_add_index" do
-          it "raises a helper warning when ActiveRecord is going to swallow per-column options" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos do |t|
-                  t.integer :bar, :limit => 4
-                  t.integer :baz, :limit => 4
-                end
-                unsafe_add_index :foos, "bar, baz", :opclass => :int4_ops
-              end
-            end
-
-            error_matcher_args = if (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR <= 1) || ActiveRecord::VERSION::MAJOR == 4
-              [ArgumentError, /Unknown key: :opclass/]
-            else
-              [PgHaMigrations::InvalidMigrationError, /ActiveRecord drops the :opclass option/]
-            end
-
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(*error_matcher_args)
-          end
-
-          it "demonstrates ActiveRecord still throws away per-column options when passed string" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos do |t|
-                  t.integer :bar, :limit => 4
-                  t.integer :baz, :limit => 4
-                end
-                execute_ancestor_statement(:add_index, :foos, "bar, baz", **{:opclass => {:bar => :int4_ops}})
-              end
-            end
-            expect do
-              migration.suppress_messages { migration.migrate(:up) }
-            end.not_to make_database_queries(matching: /int4_ops/)
-          end
-
-          it "generates index name with hashed identifier when default index name is too large" do
-            setup_migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table "x" * 51
-                unsafe_add_column "x" * 51, :bar, :text
-              end
-            end
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                unsafe_add_index "x" * 51, [:bar]
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to make_database_queries(matching: /CREATE INDEX "idx_on_bar_d7a594ad66"/, count: 1)
-
-            indexes = ActiveRecord::Base.connection.indexes("x" * 51)
-            expect(indexes.size).to eq(1)
-            expect(indexes.first).to have_attributes(
-              table: "x" * 51,
-              name: "idx_on_bar_d7a594ad66",
-              columns: ["bar"],
-            )
-          end
-
-          it "raises error when table does not exist" do
-            test_migration = Class.new(migration_klass) do
-              def up
-                unsafe_add_index :foo, :bar
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::UndefinedTableError, "Table \"foo\" does not exist in search path")
-          end
-        end
-
         describe "safe_remove_concurrent_index" do
           it "removes an index using the concurrent algorithm" do
             setup_migration = Class.new(migration_klass) do
@@ -3320,71 +3385,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
             migration.safe_rename_constraint(:foos, :from => :constraint_foo_bar_is_not_null, :to => :other_constraint)
-          end
-        end
-
-        describe "#unsafe_remove_constraint" do
-          before(:each) do
-            setup_migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-                unsafe_add_column :foos, :bar, :text
-                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
-              end
-            end
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-          end
-
-          it "calls safely_acquire_lock_for_table" do
-            migration = Class.new(migration_klass).new
-
-            expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos)
-            migration.unsafe_remove_constraint(:foos, :name => :constraint_foo_bar_is_not_null)
-          end
-
-          it "drop the constraint" do
-            test_migration = Class.new(migration_klass) do
-              def up
-                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to make_database_queries(matching: /ALTER TABLE .+ DROP CONSTRAINT/, count: 1)
-              .and(
-                change do
-                  ActiveRecord::Base.pluck_from_sql <<~SQL
-                    SELECT conname
-                    FROM pg_constraint
-                    WHERE conrelid = 'foos'::regclass AND contype != 'p'
-                  SQL
-                end.from(["constraint_foo_bar_is_not_null"]).to([])
-              )
-          end
-
-          it "raises a helpful error if a name is not passed" do
-            test_migration = Class.new(migration_klass) do
-              def up
-                unsafe_remove_constraint :foos, :name => nil
-              end
-            end
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(ArgumentError, "Expected <name> to be present")
-          end
-
-          it "outputs the operation" do
-            test_migration = Class.new(migration_klass) do
-              def up
-                unsafe_remove_constraint :foos, :name => :constraint_foo_bar_is_not_null
-              end
-            end
-
-            expect do
-              test_migration.migrate(:up)
-            end.to output(/remove_constraint\(:foos, name: :constraint_foo_bar_is_not_null\)/m).to_stdout
           end
         end
 
