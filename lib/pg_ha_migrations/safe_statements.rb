@@ -218,21 +218,18 @@ module PgHaMigrations::SafeStatements
       PgHaMigrations::Index.from_table_and_columns(child_table, columns)
     end
 
-    # TODO: take out ShareLock after issue #39 is implemented
-    safely_acquire_lock_for_table(parent_table.fully_qualified_name) do
-      # CREATE INDEX ON ONLY parent_table
-      unsafe_add_index(
-        parent_table.fully_qualified_name,
-        columns,
-        name: parent_index.name,
-        if_not_exists: if_not_exists,
-        using: using,
-        unique: unique,
-        where: where,
-        comment: comment,
-        algorithm: :only, # see lib/pg_ha_migrations/hacks/add_index_on_only.rb
-      )
-    end
+    # CREATE INDEX ON ONLY parent_table
+    unsafe_add_index(
+      parent_table.fully_qualified_name,
+      columns,
+      name: parent_index.name,
+      if_not_exists: if_not_exists,
+      using: using,
+      unique: unique,
+      where: where,
+      comment: comment,
+      algorithm: :only, # see lib/pg_ha_migrations/hacks/add_index_on_only.rb
+    )
 
     child_indexes.each do |child_index|
       add_index_method = if child_index.table.natively_partitioned?
