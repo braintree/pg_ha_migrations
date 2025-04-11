@@ -12,6 +12,7 @@ jobs:
         ruby:
           - "3.2"
           - "3.3"
+          - "3.4"
         gemfile:
           - rails_7.1
           - rails_7.2
