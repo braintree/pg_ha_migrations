@@ -37,7 +37,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "pry-byebug"
   spec.add_development_dependency "appraisal", "~> 2.5"
 
-  spec.add_dependency "rails", ">= 7.0", "< 8.1"
+  spec.add_dependency "rails", ">= 7.1", "< 8.1"
   spec.add_dependency "relation_to_struct", ">= 1.5.1"
   spec.add_dependency "ruby2_keywords"
 end

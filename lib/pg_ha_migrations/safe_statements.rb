@@ -3,12 +3,12 @@ module PgHaMigrations::SafeStatements
     @safe_added_columns_without_default_value ||= []
   end
 
-  def safe_create_table(table, options={}, &block)
+  def safe_create_table(table, **options, &block)
     if options[:force]
       raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
     end
 
-    unsafe_create_table(table, options, &block)
+    unsafe_create_table(table, **options, &block)
   end
 
   def safe_create_enum_type(name, values=nil)
@@ -29,15 +29,7 @@ module PgHaMigrations::SafeStatements
     raw_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} ADD VALUE '#{PG::Connection.escape_string(value)}'")
   end
 
-  def unsafe_rename_enum_value(name, old_value, new_value)
-    if ActiveRecord::Base.connection.postgresql_version < 10_00_00
-      raise PgHaMigrations::InvalidMigrationError, "Renaming an enum value is not supported on Postgres databases before version 10"
-    end
-
-    raw_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} RENAME VALUE '#{PG::Connection.escape_string(old_value)}' TO '#{PG::Connection.escape_string(new_value)}'")
-  end
-
-  def safe_add_column(table, column, type, options = {})
+  def safe_add_column(table, column, type, **options)
     # Note: we don't believe we need to consider the odd case where
     # `:default => nil` or `:default => -> { null }` (or similar) is
     # passed because:
@@ -60,13 +52,7 @@ module PgHaMigrations::SafeStatements
       self.safe_added_columns_without_default_value << [table.to_s, column.to_s]
     end
 
-    unsafe_add_column(table, column, type, options)
-  end
-
-  def unsafe_add_column(table, column, type, options = {})
-    safely_acquire_lock_for_table(table) do
-      super(table, column, type, **options)
-    end
+    unsafe_add_column(table, column, type, **options)
   end
 
   def safe_change_column_default(table_name, column_name, default_value)
@@ -168,16 +154,7 @@ module PgHaMigrations::SafeStatements
     unsafe_remove_constraint(table, name: tmp_constraint_name)
   end
 
-  def unsafe_make_column_not_nullable(table, column, options={}) # options arg is only present for backwards compatiblity
-    quoted_table_name = connection.quote_table_name(table)
-    quoted_column_name = connection.quote_column_name(column)
-
-    safely_acquire_lock_for_table(table) do
-      raw_execute "ALTER TABLE #{quoted_table_name} ALTER COLUMN #{quoted_column_name} SET NOT NULL"
-    end
-  end
-
-  def safe_add_index_on_empty_table(table, columns, options={})
+  def safe_add_index_on_empty_table(table, columns, **options)
     if options[:algorithm] == :concurrently
       raise ArgumentError, "Cannot call safe_add_index_on_empty_table with :algorithm => :concurrently"
     end
@@ -193,11 +170,11 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def safe_add_concurrent_index(table, columns, options={})
+  def safe_add_concurrent_index(table, columns, **options)
     unsafe_add_index(table, columns, **options.merge(:algorithm => :concurrently))
   end
 
-  def safe_remove_concurrent_index(table, options={})
+  def safe_remove_concurrent_index(table, **options)
     unless options.is_a?(Hash) && options.key?(:name)
       raise ArgumentError, "Expected safe_remove_concurrent_index to be called with arguments (table_name, :name => ...)"
     end
@@ -329,20 +306,6 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def unsafe_remove_constraint(table, name:)
-    raise ArgumentError, "Expected <name> to be present" unless name.present?
-
-    quoted_table_name = connection.quote_table_name(table)
-    quoted_constraint_name = connection.quote_table_name(name)
-    sql = "ALTER TABLE #{quoted_table_name} DROP CONSTRAINT #{quoted_constraint_name}"
-
-    safely_acquire_lock_for_table(table) do
-      say_with_time "remove_constraint(#{table.inspect}, name: #{name.inspect})" do
-        connection.execute(sql)
-      end
-    end
-  end
-
   def safe_create_partitioned_table(table, partition_key:, type:, infer_primary_key: nil, **options, &block)
     raise ArgumentError, "Expected <partition_key> to be present" unless partition_key.present?
 
@@ -384,7 +347,7 @@ module PgHaMigrations::SafeStatements
 
     options[:options] = "PARTITION BY #{type.upcase} (#{quoted_partition_key})"
 
-    safe_create_table(table, options) do |td|
+    safe_create_table(table, **options) do |td|
       block.call(td) if block
 
       next unless options[:id]
@@ -620,12 +583,6 @@ module PgHaMigrations::SafeStatements
         end
       end
     end
-  end
-
-  # since rails versions < 7.1 has bug which does not handle symbol for
-  # constraint name, we are converting name to string explicitly to solve that.
-  def raw_remove_check_constraint(table, name:, **options)
-    super(table, name: name.to_s, **options)
   end
 
   def adjust_lock_timeout(timeout_seconds = PgHaMigrations::LOCK_TIMEOUT_SECONDS, &block)
