@@ -783,6 +783,33 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq("5")
           end
 
+          it "renames drop_table to unsafe_drop_table" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_create_table :foos
+                unsafe_drop_table :foos
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to make_database_queries(matching: /LOCK "public"\."foos" IN ACCESS EXCLUSIVE MODE/, count: 1)
+
+            expect(ActiveRecord::Base.connection.tables).not_to include("foos")
+          end
+
+          it "renames execute to unsafe_execute" do
+            migration = Class.new(migration_klass) do
+              def up
+                unsafe_execute "CREATE TABLE foos ( pk serial )"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            expect(ActiveRecord::Base.connection.tables).to include("foos")
+          end
+
           it "renames remove_check_constraint to unsafe_remove_check_constraint" do
             migration = Class.new(migration_klass) do
               def up
@@ -843,31 +870,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(ActiveRecord::Base.connection.columns("foos").map(&:name)).to include("baz")
           end
 
-          it "renames drop_table to unsafe_drop_table" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-                unsafe_drop_table :foos
-              end
-            end
-
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(ActiveRecord::Base.connection.tables).not_to include("foos")
-          end
-
-          it "renames execute to unsafe_execute" do
-            migration = Class.new(migration_klass) do
-              def up
-                unsafe_execute "CREATE TABLE foos ( pk serial )"
-              end
-            end
-
-            migration.suppress_messages { migration.migrate(:up) }
-
-            expect(ActiveRecord::Base.connection.tables).to include("foos")
-          end
-
           it "renames rename_table to unsafe_rename_table" do
             migration = Class.new(migration_klass) do
               def up
@@ -876,7 +878,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            migration.suppress_messages { migration.migrate(:up) }
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to make_database_queries(matching: /LOCK "public"\."foos" IN ACCESS EXCLUSIVE MODE/, count: 1)
 
             expect(ActiveRecord::Base.connection.tables).not_to include("foos")
             expect(ActiveRecord::Base.connection.tables).to include("bars")

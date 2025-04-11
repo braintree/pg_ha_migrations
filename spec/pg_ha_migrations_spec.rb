@@ -136,7 +136,7 @@ RSpec.describe PgHaMigrations do
           end
 
           PgHaMigrations::UnsafeStatements.class_eval do
-            delegate_unsafe_method_to_migration_base_class(:pg_ha_migrations_test_method)
+            delegate_unsafe_method_to_migration_base_class(:pg_ha_migrations_test_method, with_lock: false)
             def pg_ha_migrations_test_method
               raise "unexpected execution of unsafe method"
             end

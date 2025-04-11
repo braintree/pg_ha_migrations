@@ -18,24 +18,17 @@ module PgHaMigrations::UnsafeStatements
     ruby2_keywords method_name
   end
 
-  def self.delegate_unsafe_method_to_migration_base_class(method_name)
+  def self.delegate_unsafe_method_to_migration_base_class(method_name, with_lock: true)
     define_method("unsafe_#{method_name}") do |*args, &block|
       if PgHaMigrations.config.check_for_dependent_objects
         disallow_migration_method_if_dependent_objects!(method_name, arguments: args)
       end
 
-      execute_ancestor_statement(method_name, *args, &block)
-    end
-    ruby2_keywords "unsafe_#{method_name}"
-  end
-
-  def self.delegate_unsafe_method_to_migration_base_class_with_lock(method_name, mode: :access_exclusive)
-    define_method("unsafe_#{method_name}") do |*args, &block|
-      if PgHaMigrations.config.check_for_dependent_objects
-        disallow_migration_method_if_dependent_objects!(method_name, arguments: args)
-      end
-
-      safely_acquire_lock_for_table(args.first, mode: mode) do
+      if with_lock
+        safely_acquire_lock_for_table(args.first) do
+          execute_ancestor_statement(method_name, *args, &block)
+        end
+      else
         execute_ancestor_statement(method_name, *args, &block)
       end
     end
@@ -50,21 +43,15 @@ module PgHaMigrations::UnsafeStatements
   end
 
   # Direct dispatch to underlying Rails method as unsafe_<method_name> with dependent object check / safe lock acquisition
-  delegate_unsafe_method_to_migration_base_class_with_lock :add_check_constraint
-  delegate_unsafe_method_to_migration_base_class_with_lock :add_column
-  delegate_unsafe_method_to_migration_base_class_with_lock :change_column
-  delegate_unsafe_method_to_migration_base_class_with_lock :change_column_default
-  delegate_unsafe_method_to_migration_base_class_with_lock :remove_check_constraint
-  delegate_unsafe_method_to_migration_base_class_with_lock :remove_column
-  delegate_unsafe_method_to_migration_base_class_with_lock :rename_column
-
-  # Direct dispatch to underlying Rails method as unsafe_<method_name> with dependent object check / no locking
-  #
-  # We don't do locking on execute because it's so generic.
-  # For drop_table and rename_table, it's implied that the table is unused.
-  # If the table is still being used... that's a bigger problem that locking won't solve.
+  delegate_unsafe_method_to_migration_base_class :add_check_constraint
+  delegate_unsafe_method_to_migration_base_class :add_column
+  delegate_unsafe_method_to_migration_base_class :change_column
+  delegate_unsafe_method_to_migration_base_class :change_column_default
   delegate_unsafe_method_to_migration_base_class :drop_table
-  delegate_unsafe_method_to_migration_base_class :execute
+  delegate_unsafe_method_to_migration_base_class :execute, with_lock: false # too generic for locking
+  delegate_unsafe_method_to_migration_base_class :remove_check_constraint
+  delegate_unsafe_method_to_migration_base_class :remove_column
+  delegate_unsafe_method_to_migration_base_class :rename_column
   delegate_unsafe_method_to_migration_base_class :rename_table
 
   # Direct dispatch to underlying Rails method as raw_<method_name> without dependent object check / locking
