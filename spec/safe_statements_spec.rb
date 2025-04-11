@@ -784,8 +784,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "renames remove_check_constraint to unsafe_remove_check_constraint" do
-            skip "Turns out the raw_remove_check_constraint fix for Rails 7 didn't work anyway" if ActiveRecord.gem_version < Gem::Version.new("7.1")
-
             migration = Class.new(migration_klass) do
               def up
                 unsafe_create_table(:foos) { |t| t.integer :bar }
@@ -2073,42 +2071,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
               expect do
                 migration.suppress_messages { migration.migrate(:up) }
               end.to raise_error PgHaMigrations::BestPracticeError
-            end
-          end
-        end
-
-        describe "raw_remove_check_constraint" do
-          before(:each) do
-            setup_migration = Class.new(migration_klass) do
-              define_method(:up) do
-                unsafe_create_table :foos
-                unsafe_add_column :foos, :bar, :text
-                unsafe_add_check_constraint :foos, "bar IS NOT NULL", :name => :constraint_foo_bar_is_not_null
-              end
-            end
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-          end
-
-          ["constraint_foo_bar_is_not_null", :constraint_foo_bar_is_not_null].each do |constraint_name|
-            it "removes the check constraint when passed as a #{constraint_name.is_a?(Symbol) ? "symbol" : "string"}" do
-              migration = Class.new(migration_klass) do
-                # If 'def up' is used instead, we would lose access to the
-                # constraint_name local variable, so we use
-                # 'define_method(:up)'.
-                define_method(:up) do
-                  raw_remove_check_constraint :foos, name: constraint_name
-                end
-              end
-
-              expect do
-                migration.suppress_messages { migration.migrate(:up) }
-              end.to change {
-                ActiveRecord::Base.connection.select_value <<~SQL
-                  SELECT conname
-                  FROM pg_constraint
-                  WHERE conname = 'constraint_foo_bar_is_not_null'
-                SQL
-              }.from("constraint_foo_bar_is_not_null").to(nil)
             end
           end
         end

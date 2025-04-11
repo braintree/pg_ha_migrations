@@ -585,12 +585,6 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  # since rails versions < 7.1 has bug which does not handle symbol for
-  # constraint name, we are converting name to string explicitly to solve that.
-  def raw_remove_check_constraint(table, name:, **options)
-    super(table, name: name.to_s, **options)
-  end
-
   def adjust_lock_timeout(timeout_seconds = PgHaMigrations::LOCK_TIMEOUT_SECONDS, &block)
     _check_postgres_adapter!
     original_timeout = ActiveRecord::Base.value_from_sql("SHOW lock_timeout").sub(/s\Z/, '').to_i * 1000
