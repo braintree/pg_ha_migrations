@@ -154,6 +154,42 @@ module PgHaMigrations::SafeStatements
     unsafe_remove_constraint(table, name: tmp_constraint_name)
   end
 
+  def safe_make_column_not_nullable_from_check_constraint(table, column, constraint_name:)
+    unless ActiveRecord::Base.connection.postgresql_version >= 12_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Cannot safely make a column non-nullable before Postgres 12"
+    end
+
+    unless constraint_name
+      raise ArgumentError, "Expected <constraint_name> to be present"
+    end
+
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_column_name = connection.quote_column_name(column)
+
+    constraint = ActiveRecord::Base.connection.select_one(<<~SQL)
+      SELECT conname, convalidated, pg_get_constraintdef(oid) AS constraint_def
+      FROM pg_constraint
+      WHERE conname = #{connection.quote(constraint_name.to_s)}
+        AND conrelid = #{connection.quote(quoted_table_name)}::regclass
+    SQL
+
+    unless constraint
+      raise PgHaMigrations::InvalidMigrationError, "The provided constraint does not exist"
+    end
+
+    unless constraint["convalidated"]
+      raise PgHaMigrations::InvalidMigrationError, "The provided constraint is not validated"
+    end
+
+    unless constraint["constraint_def"] =~ /\ACHECK \(*(#{Regexp.escape(column.to_s)}|#{Regexp.escape(quoted_column_name)}) IS NOT NULL\)*\Z/i
+      raise PgHaMigrations::InvalidMigrationError, "The provided constraint does not enforce non-null values for the column"
+    end
+
+    safely_acquire_lock_for_table(table) do
+      unsafe_make_column_not_nullable(table, column)
+    end
+  end
+
   def safe_add_index_on_empty_table(table, columns, **options)
     if options[:algorithm] == :concurrently
       raise ArgumentError, "Cannot call safe_add_index_on_empty_table with :algorithm => :concurrently"

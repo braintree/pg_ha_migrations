@@ -2195,6 +2195,79 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        describe "#safe_make_column_not_nullable_from_check_constraint" do
+          let(:migration) { Class.new(ActiveRecord::Migration::Current).new }
+
+          before(:each) do
+            migration.suppress_messages do
+              migration.safe_create_table(:test_table) do |t|
+                t.integer :column_to_check
+              end
+              migration.safe_add_unvalidated_check_constraint(:test_table, "column_to_check IS NOT NULL", name: :test_check_constraint)
+            end
+          end
+
+          it "raises an error if the constraint does not exist" do
+            expect do
+              migration.suppress_messages do
+                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :column_to_check, constraint_name: :non_existent_constraint)
+              end
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, /The provided constraint does not exist/)
+          end
+
+          it "raises an error if the constraint is not validated" do
+            expect do
+              migration.suppress_messages do
+                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :column_to_check, constraint_name: :test_check_constraint)
+              end
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, /The provided constraint is not validated/)
+          end
+
+          it "raises an error if the CHECK constraint does not enforce non-null values" do
+            migration.suppress_messages do
+              migration.safe_add_unvalidated_check_constraint(:test_table, "column_to_check > 0", name: :check_positive)
+              migration.safe_validate_check_constraint(:test_table, name: :check_positive)
+            end
+
+            expect do
+              migration.suppress_messages do
+                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :column_to_check, constraint_name: "check_positive")
+              end
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, /does not enforce non-null values/)
+          end
+
+          it "makes the column NOT NULL if the constraint is validated" do
+            migration.suppress_messages do
+              migration.safe_validate_check_constraint(:test_table, name: :test_check_constraint)
+            end
+
+            expect do
+              migration.suppress_messages do
+                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :column_to_check, constraint_name: :test_check_constraint)
+              end
+            end.not_to raise_error
+
+            column_details = ActiveRecord::Base.connection.columns(:test_table).find { |col| col.name == "column_to_check" }
+            expect(column_details.null).to be(false)
+          end
+
+          it "makes a column that needs quoting NOT NULL if the constraint is validated" do
+            migration.suppress_messages do
+              migration.unsafe_rename_column(:test_table, :column_to_check, "other column")
+              migration.safe_validate_check_constraint(:test_table, name: :test_check_constraint)
+            end
+
+            expect do
+              migration.suppress_messages do
+                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, "other column", constraint_name: :test_check_constraint)
+              end
+            end.not_to raise_error
+
+            column_details = ActiveRecord::Base.connection.columns(:test_table).find { |col| col.name == "other column" }
+            expect(column_details.null).to be(false)
+          end
+        end
+
         describe "#safe_set_maintenance_work_mem_gb" do
           it "sets the maintenance work memory for building indexes" do
             begin
