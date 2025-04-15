@@ -3,7 +3,7 @@ require "spec_helper"
 RSpec.describe PgHaMigrations::LockMode do
   subject { described_class.new(mode) }
 
-  context "when mode is access_share" do
+  describe "when mode is access_share" do
     let(:mode) { :access_share }
 
     it "returns correct comparisons" do
@@ -32,7 +32,7 @@ RSpec.describe PgHaMigrations::LockMode do
     end
   end
 
-  context "when mode is row_share" do
+  describe "when mode is row_share" do
     let(:mode) { :row_share }
 
     it "returns correct comparisons" do
@@ -66,7 +66,7 @@ RSpec.describe PgHaMigrations::LockMode do
     end
   end
 
-  context "when mode is row_exclusive" do
+  describe "when mode is row_exclusive" do
     let(:mode) { :row_exclusive }
 
     it "returns correct comparisons" do
@@ -100,7 +100,7 @@ RSpec.describe PgHaMigrations::LockMode do
     end
   end
 
-  context "when mode is share_update_exclusive" do
+  describe "when mode is share_update_exclusive" do
     let(:mode) { :share_update_exclusive }
 
     it "returns correct comparisons" do
@@ -134,7 +134,7 @@ RSpec.describe PgHaMigrations::LockMode do
     end
   end
 
-  context "when mode is share" do
+  describe "when mode is share" do
     let(:mode) { :share }
 
     it "returns correct comparisons" do
@@ -168,7 +168,7 @@ RSpec.describe PgHaMigrations::LockMode do
     end
   end
 
-  context "when mode is share_row_exclusive" do
+  describe "when mode is share_row_exclusive" do
     let(:mode) { :share_row_exclusive }
 
     it "returns correct comparisons" do
@@ -202,7 +202,7 @@ RSpec.describe PgHaMigrations::LockMode do
     end
   end
 
-  context "when mode is exclusive" do
+  describe "when mode is exclusive" do
     let(:mode) { :exclusive }
 
     it "returns correct comparisons" do
@@ -236,7 +236,7 @@ RSpec.describe PgHaMigrations::LockMode do
     end
   end
 
-  context "when mode is access_exclusive" do
+  describe "when mode is access_exclusive" do
     let(:mode) { :access_exclusive }
 
     it "returns correct comparisons" do

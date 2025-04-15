@@ -219,7 +219,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        context "when configured to disable default migration methods" do
+        describe "when configured to disable default migration methods" do
           it "raises when using default create_table method" do
             migration = Class.new(migration_klass) do
               def up
@@ -382,7 +382,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        context "when not configured to disable default migration methods" do
+        describe "when not configured to disable default migration methods" do
           before(:each) do
             allow(PgHaMigrations.config)
               .to receive(:disable_default_migration_methods)
@@ -551,7 +551,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        context "delegated raw methods" do
+        describe "delegated raw methods" do
           it "does not raise when using raw_create_table method" do
             migration = Class.new(migration_klass) do
               def up
@@ -714,7 +714,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
-        context "delegated unsafe methods" do
+        describe "delegated unsafe methods" do
           it "renames add_check_constraint to unsafe_add_check_constraint" do
             migration = Class.new(migration_klass) do
               def up
@@ -1395,7 +1395,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "#unsafe_partman_update_config" do
-          context "when extension not installed" do
+          describe "when extension not installed" do
             it "raises error" do
               migration = Class.new(migration_klass) do
                 def up
@@ -1409,7 +1409,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          context "when extension installed" do
+          describe "when extension installed" do
             before do
               ActiveRecord::Base.connection.execute("CREATE EXTENSION pg_partman")
 
@@ -2040,7 +2040,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.not_to raise_error
           end
 
-          context "when not configured to disallow two-step new column and adding default" do
+          describe "when not configured to disallow two-step new column and adding default" do
             before(:each) do
               allow(PgHaMigrations.config)
                 .to receive(:prefer_single_step_column_addition_with_default)
@@ -2062,7 +2062,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          context "when configured to disallow two-step new column and adding default" do
+          describe "when configured to disallow two-step new column and adding default" do
             it "disallows setting a constant default value when the column was added in the same migration" do
               migration = Class.new(migration_klass) do
                 define_method(:up) do
@@ -3874,7 +3874,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "#safe_partman_create_parent" do
-          context "when extension not installed" do
+          describe "when extension not installed" do
             it "raises error" do
               create_range_partitioned_table(:foos3, migration_klass)
 
@@ -3890,7 +3890,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          context "when extension installed" do
+          describe "when extension installed" do
             before do
               ActiveRecord::Base.connection.execute("CREATE EXTENSION pg_partman")
 
@@ -3929,7 +3929,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          context "when extension installed in different schema" do
+          describe "when extension installed in different schema" do
             before do
               ActiveRecord::Base.connection.execute(<<~SQL)
                 CREATE SCHEMA partman;
@@ -4254,7 +4254,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
 
         describe "#safe_partman_reapply_privileges" do
-          context "when extension not installed" do
+          describe "when extension not installed" do
             it "raises error" do
               migration = Class.new(migration_klass) do
                 def up
@@ -4268,7 +4268,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          context "when extension installed" do
+          describe "when extension installed" do
             before do
               ActiveRecord::Base.connection.execute("CREATE EXTENSION pg_partman")
 

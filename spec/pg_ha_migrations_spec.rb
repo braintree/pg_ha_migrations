@@ -14,7 +14,7 @@ RSpec.describe PgHaMigrations do
       PgHaMigrations.instance_variable_set(:@config, nil)
     end
 
-    context "disable_default_migration_methods" do
+    describe "disable_default_migration_methods" do
       it "is set to true by default" do
         expect(PgHaMigrations.config.disable_default_migration_methods).to be(true)
       end
@@ -28,7 +28,7 @@ RSpec.describe PgHaMigrations do
       end
     end
 
-    context "check_for_dependent_objects" do
+    describe "check_for_dependent_objects" do
       it "is set to true by default" do
         expect(PgHaMigrations.config.check_for_dependent_objects).to be(true)
       end
@@ -42,7 +42,7 @@ RSpec.describe PgHaMigrations do
       end
     end
 
-    context "allow_force_create_table" do
+    describe "allow_force_create_table" do
       it "is set to false by default" do
         expect(PgHaMigrations.config.allow_force_create_table).to be(false)
       end
@@ -56,7 +56,7 @@ RSpec.describe PgHaMigrations do
       end
     end
 
-    context "prefer_single_step_column_addition_with_default" do
+    describe "prefer_single_step_column_addition_with_default" do
       it "is set to true by default" do
         expect(PgHaMigrations.config.prefer_single_step_column_addition_with_default).to be(true)
       end
@@ -70,7 +70,7 @@ RSpec.describe PgHaMigrations do
       end
     end
 
-    context "infer_primary_key_on_partitioned_tables" do
+    describe "infer_primary_key_on_partitioned_tables" do
       it "is set to true by default" do
         expect(PgHaMigrations.config.infer_primary_key_on_partitioned_tables).to be(true)
       end
