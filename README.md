@@ -53,6 +53,10 @@ While `unsafe_*` methods were historically (before 2.0) pure wrappers for invoki
 
 For `unsafe_*` migration methods which support checks of this type you can bypass the checks by passing an `:allow_dependent_objects` key in the method's `options` hash containing an array of dependent object types you'd like to allow. These checks will run by default, but you can opt-out by setting `config.check_for_dependent_objects = false` [in your configuration initializer](#configuration).
 
+### Disallowed Migration Methods
+
+We disallow the use of `unsafe_change_table`, as the equivalent operation can be composed with explicit `safe_*` / `unsafe_*` methods. If you _must_ use `change_table`, it is still available as `raw_change_table`.
+
 ### Migration Method Arguments
 
 We believe the `force: true` option to ActiveRecord's `create_table` method is always unsafe because it's not possible to denote exactly how the current state will change. Therefore we disallow using `force: true` even when calling `unsafe_create_table`. This option is enabled by default, but you can opt-out by setting `config.allow_force_create_table = true` [in your configuration initializer](#configuration).

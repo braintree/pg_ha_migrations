@@ -18,13 +18,19 @@ module PgHaMigrations::UnsafeStatements
     ruby2_keywords method_name
   end
 
-  def self.delegate_unsafe_method_to_migration_base_class(method_name)
+  def self.delegate_unsafe_method_to_migration_base_class(method_name, with_lock: true)
     define_method("unsafe_#{method_name}") do |*args, &block|
       if PgHaMigrations.config.check_for_dependent_objects
         disallow_migration_method_if_dependent_objects!(method_name, arguments: args)
       end
 
-      execute_ancestor_statement(method_name, *args, &block)
+      if with_lock
+        safely_acquire_lock_for_table(args.first) do
+          execute_ancestor_statement(method_name, *args, &block)
+        end
+      else
+        execute_ancestor_statement(method_name, *args, &block)
+      end
     end
     ruby2_keywords "unsafe_#{method_name}"
   end
@@ -36,23 +42,19 @@ module PgHaMigrations::UnsafeStatements
     ruby2_keywords "raw_#{method_name}"
   end
 
-  # Direct dispatch to underlying Rails method as unsafe_<method_name> with dependent object check
+  # Direct dispatch to underlying Rails method as unsafe_<method_name> with dependent object check / safe lock acquisition
   delegate_unsafe_method_to_migration_base_class :add_check_constraint
   delegate_unsafe_method_to_migration_base_class :add_column
-  delegate_unsafe_method_to_migration_base_class :add_foreign_key
   delegate_unsafe_method_to_migration_base_class :change_column
   delegate_unsafe_method_to_migration_base_class :change_column_default
-  delegate_unsafe_method_to_migration_base_class :change_table
   delegate_unsafe_method_to_migration_base_class :drop_table
-  delegate_unsafe_method_to_migration_base_class :execute
+  delegate_unsafe_method_to_migration_base_class :execute, with_lock: false # too generic for locking
   delegate_unsafe_method_to_migration_base_class :remove_check_constraint
   delegate_unsafe_method_to_migration_base_class :remove_column
-  delegate_unsafe_method_to_migration_base_class :remove_foreign_key
-  delegate_unsafe_method_to_migration_base_class :remove_index
   delegate_unsafe_method_to_migration_base_class :rename_column
   delegate_unsafe_method_to_migration_base_class :rename_table
 
-  # Direct dispatch to underlying Rails method as raw_<method_name> without dependent object check
+  # Direct dispatch to underlying Rails method as raw_<method_name> without dependent object check / locking
   delegate_raw_method_to_migration_base_class :add_check_constraint
   delegate_raw_method_to_migration_base_class :add_column
   delegate_raw_method_to_migration_base_class :add_foreign_key
@@ -72,7 +74,7 @@ module PgHaMigrations::UnsafeStatements
   delegate_raw_method_to_migration_base_class :rename_table
 
   # Raises error if disable_default_migration_methods is true
-  # Otherwise, direct dispatch to underlying Rails method without dependent object check
+  # Otherwise, direct dispatch to underlying Rails method without dependent object check / locking
   disable_or_delegate_default_method :add_check_constraint, ":add_check_constraint is NOT SAFE! Use :safe_add_unvalidated_check_constraint and then :safe_validate_check_constraint instead"
   disable_or_delegate_default_method :add_column, ":add_column is NOT SAFE! Use safe_add_column instead"
   disable_or_delegate_default_method :add_foreign_key, ":add_foreign_key is NOT SAFE! Explicitly call :unsafe_add_foreign_key"
@@ -91,7 +93,13 @@ module PgHaMigrations::UnsafeStatements
   disable_or_delegate_default_method :rename_column, ":rename_column is NOT SAFE! Explicitly call :unsafe_rename_column to proceed"
   disable_or_delegate_default_method :rename_table, ":rename_table is NOT SAFE! Explicitly call :unsafe_rename_table to proceed"
 
-  def unsafe_create_table(table, options={}, &block)
+  # Note that unsafe_* methods defined below do not run dependent object checks
+
+  def unsafe_change_table(*args, &block)
+    raise PgHaMigrations::UnsafeMigrationError.new(":change_table is too generic to even allow an unsafe variant. Use a combination of safe and explicit unsafe migration methods instead")
+  end
+
+  def unsafe_create_table(table, **options, &block)
     if options[:force] && !PgHaMigrations.config.allow_force_create_table
       raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
     end
@@ -99,7 +107,7 @@ module PgHaMigrations::UnsafeStatements
     execute_ancestor_statement(:create_table, table, **options, &block)
   end
 
-  def unsafe_add_index(table, column_names, options = {})
+  def unsafe_add_index(table, column_names, **options)
     if ((ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR >= 2) || ActiveRecord::VERSION::MAJOR > 5) &&
         column_names.is_a?(String) && /\W/.match?(column_names) && options.key?(:opclass)
       raise PgHaMigrations::InvalidMigrationError, "ActiveRecord drops the :opclass option when supplying a string containing an expression or list of columns; instead either supply an array of columns or include the opclass in the string for each column"
@@ -115,7 +123,72 @@ module PgHaMigrations::UnsafeStatements
 
     options[:name] = validated_index.name
 
-    execute_ancestor_statement(:add_index, table, column_names, **options)
+    if options[:algorithm] == :concurrently
+      execute_ancestor_statement(:add_index, table, column_names, **options)
+    else
+      safely_acquire_lock_for_table(table, mode: :share) do
+        execute_ancestor_statement(:add_index, table, column_names, **options)
+      end
+    end
+  end
+
+  def unsafe_remove_index(table, column = nil, **options)
+    if options[:algorithm]== :concurrently
+      execute_ancestor_statement(:remove_index, table, column, **options)
+    else
+      safely_acquire_lock_for_table(table) do
+        execute_ancestor_statement(:remove_index, table, column, **options)
+      end
+    end
+  end
+
+  def unsafe_add_foreign_key(from_table, to_table, **options)
+    safely_acquire_lock_for_table(from_table, to_table, mode: :share_row_exclusive) do
+      execute_ancestor_statement(:add_foreign_key, from_table, to_table, **options)
+    end
+  end
+
+  def unsafe_remove_foreign_key(from_table, to_table = nil, **options)
+    calculated_to_table = options.fetch(:to_table, to_table)
+
+    if calculated_to_table.nil?
+      raise PgHaMigrations::InvalidMigrationError.new("The :to_table positional arg / kwarg is required for lock acquisition")
+    end
+
+    safely_acquire_lock_for_table(from_table, calculated_to_table) do
+      execute_ancestor_statement(:remove_foreign_key, from_table, to_table, **options)
+    end
+  end
+
+  def unsafe_rename_enum_value(name, old_value, new_value)
+    if ActiveRecord::Base.connection.postgresql_version < 10_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Renaming an enum value is not supported on Postgres databases before version 10"
+    end
+
+    raw_execute("ALTER TYPE #{PG::Connection.quote_ident(name.to_s)} RENAME VALUE '#{PG::Connection.escape_string(old_value)}' TO '#{PG::Connection.escape_string(new_value)}'")
+  end
+
+  def unsafe_make_column_not_nullable(table, column, **options) # options arg is only present for backwards compatiblity
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_column_name = connection.quote_column_name(column)
+
+    safely_acquire_lock_for_table(table) do
+      raw_execute("ALTER TABLE #{quoted_table_name} ALTER COLUMN #{quoted_column_name} SET NOT NULL")
+    end
+  end
+
+  def unsafe_remove_constraint(table, name:)
+    raise ArgumentError, "Expected <name> to be present" unless name.present?
+
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_constraint_name = connection.quote_table_name(name)
+    sql = "ALTER TABLE #{quoted_table_name} DROP CONSTRAINT #{quoted_constraint_name}"
+
+    safely_acquire_lock_for_table(table) do
+      say_with_time "remove_constraint(#{table.inspect}, name: #{name.inspect})" do
+        connection.execute(sql)
+      end
+    end
   end
 
   def unsafe_partman_update_config(table, **options)
@@ -126,10 +199,6 @@ module PgHaMigrations::UnsafeStatements
     PgHaMigrations::PartmanConfig.schema = _quoted_partman_schema
 
     config = PgHaMigrations::PartmanConfig.find(_fully_qualified_table_name_for_partman(table))
-
-    if !options[:automatic_maintenance].nil?
-      options[:automatic_maintenance] = options[:automatic_maintenance] ? "on" : "off"
-    end
 
     config.assign_attributes(**options)
 
