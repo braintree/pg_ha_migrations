@@ -3344,9 +3344,18 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
+            # Ruby 3.4 changed #inspect rendering for hashes
+            #
+            # https://rubyreferences.github.io/rubychanges/3.4.html#inspect-rendering-have-been-changed
+            expected_output = if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.4.0")
+              /add_check_constraint\(:foos, "bar IS NOT NULL", {:name=>:constraint_foo_bar_is_not_null, :validate=>false}\)/m
+            else
+              /add_check_constraint\(:foos, "bar IS NOT NULL", {name: :constraint_foo_bar_is_not_null, validate: false}\)/m
+            end
+
             expect do
               test_migration.migrate(:up)
-            end.to output(/add_check_constraint\(:foos, "bar IS NOT NULL", {:name=>:constraint_foo_bar_is_not_null, :validate=>false}\)/m).to_stdout
+            end.to output(expected_output).to_stdout
           end
         end
 
