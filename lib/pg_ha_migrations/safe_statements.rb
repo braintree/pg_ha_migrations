@@ -159,11 +159,6 @@ module PgHaMigrations::SafeStatements
       raise ArgumentError, "Cannot call safe_add_index_on_empty_table with :algorithm => :concurrently"
     end
 
-    # Check if nulls_not_distinct was provided but not supported
-    if options[:nulls_not_distinct] && ActiveRecord.gem_version < Gem::Version.new("7.1")
-      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
-    end
-
     # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
     if options[:nulls_not_distinct] && ActiveRecord::Base.connection.postgresql_version < 15_00_00
       raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
@@ -181,11 +176,6 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_add_concurrent_index(table, columns, **options)
-    # Check if nulls_not_distinct was provided but not supported
-    if options[:nulls_not_distinct] && ActiveRecord.gem_version < Gem::Version.new("7.1")
-      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
-    end
-
     # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
     if options[:nulls_not_distinct] && ActiveRecord::Base.connection.postgresql_version < 15_00_00
       raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
@@ -217,11 +207,6 @@ module PgHaMigrations::SafeStatements
     comment: nil,
     nulls_not_distinct: nil
   )
-    # Check if nulls_not_distinct was provided but not supported
-    if !nulls_not_distinct.nil? && ActiveRecord.gem_version < Gem::Version.new("7.1")
-      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
-    end
-
     # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
     if !nulls_not_distinct.nil? && ActiveRecord::Base.connection.postgresql_version < 15_00_00
       raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
@@ -249,25 +234,18 @@ module PgHaMigrations::SafeStatements
     end
 
     # CREATE INDEX ON ONLY parent_table
-    options = {
+    unsafe_add_index(
+      parent_table.fully_qualified_name,
+      columns,
       name: parent_index.name,
       if_not_exists: if_not_exists,
       using: using,
       unique: unique,
+      nulls_not_distinct: nulls_not_distinct,
       where: where,
       comment: comment,
       algorithm: :only, # see lib/pg_ha_migrations/hacks/add_index_on_only.rb
-    }
-
-    # Only include nulls_not_distinct option when supported (we already checked at the top of the method)
-    options[:nulls_not_distinct] = nulls_not_distinct unless nulls_not_distinct.nil?
-
-    unsafe_add_index(
-      parent_table.fully_qualified_name,
-      columns,
-      **options
     )
-    end
 
     child_indexes.each do |child_index|
       add_index_method = if child_index.table.natively_partitioned?
@@ -276,22 +254,16 @@ module PgHaMigrations::SafeStatements
         :safe_add_concurrent_index
       end
 
-      options = {
-        name: child_index.name,
-        if_not_exists: if_not_exists,
-        using: using,
-        unique: unique,
-        where: where,
-      }
-
-      # Only include nulls_not_distinct option when supported (we already checked at the top of the method)
-      options[:nulls_not_distinct] = nulls_not_distinct unless nulls_not_distinct.nil?
-
       send(
         add_index_method,
         child_index.table.fully_qualified_name,
         columns,
-        **options
+        name: child_index.name,
+        if_not_exists: if_not_exists,
+        using: using,
+        unique: unique,
+        nulls_not_distinct: nulls_not_distinct,
+        where: where,
       )
     end
 

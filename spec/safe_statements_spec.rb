@@ -2425,39 +2425,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(indexes).to be_empty
           end
 
-          it "raises error when nulls_not_distinct is provided but ActiveRecord < 7.1" do
-            skip "Only relevant in ActiveRecord versions that don't supports it" if ActiveRecord.gem_version >= Gem::Version.new("7.1")
-            skip "Will raise a separately tested argument validation error when Postgres doesn't support it" if ActiveRecord::Base.connection.postgresql_version < 15_00_00
-
-            setup_migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                safe_add_column :foos, :bar, :text
-              end
-            end
-
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_index_on_empty_table :foos, :bar, nulls_not_distinct: true
-              end
-            end
-
-            # Temporarily mock the ActiveRecord version to be < 7.1
-            allow(ActiveRecord).to receive(:gem_version).and_return(Gem::Version.new("7.0.0"))
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(
-              PgHaMigrations::InvalidMigrationError,
-              "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
-            )
-          end
-
           it "raises error when nulls_not_distinct is provided but PostgreSQL < 15" do
-            skip "Will raise a separately tested argument validation error when ActiveRecord doesn't supports it" if ActiveRecord.gem_version < Gem::Version.new("7.1")
-
             setup_migration = Class.new(migration_klass) do
               def up
                 safe_create_table :foos
@@ -2542,39 +2510,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             )
           end
 
-          it "raises error when nulls_not_distinct is provided but ActiveRecord < 7.1" do
-            skip "Only relevant in ActiveRecord versions that don't supports it" if ActiveRecord.gem_version >= Gem::Version.new("7.1")
-            skip "Will raise a separately tested argument validation error when Postgres doesn't support it" if ActiveRecord::Base.connection.postgresql_version < 15_00_00
-
-            setup_migration = Class.new(migration_klass) do
-              def up
-                safe_create_table :foos
-                safe_add_column :foos, :bar, :text
-              end
-            end
-
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_concurrent_index :foos, :bar, nulls_not_distinct: true
-              end
-            end
-
-            # Temporarily mock the ActiveRecord version to be < 7.1
-            allow(ActiveRecord).to receive(:gem_version).and_return(Gem::Version.new("7.0.0"))
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(
-              PgHaMigrations::InvalidMigrationError,
-              "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
-            )
-          end
-
           it "raises error when nulls_not_distinct is provided but PostgreSQL < 15" do
-            skip "Will raise a separately tested argument validation error when ActiveRecord doesn't supports it" if ActiveRecord.gem_version < Gem::Version.new("7.1")
-
             setup_migration = Class.new(migration_klass) do
               def up
                 safe_create_table :foos
@@ -3341,7 +3277,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index with nulls_not_distinct when multiple child partitions exist" do
-            skip "Won't actually be able to create nulls_not_distinct indexes unless ActiveRecord supports it" if ActiveRecord.gem_version < Gem::Version.new("7.1")
             skip "Won't actually be able to create nulls_not_distinct indexes unless Postgres supports it" if ActiveRecord::Base.connection.postgresql_version < 15_00_00
 
             create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
@@ -3384,36 +3319,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
-          it "raises error when nulls_not_distinct is provided but ActiveRecord < 7.1" do
-            skip "Only relevant in ActiveRecord versions that don't supports it" if ActiveRecord.gem_version >= Gem::Version.new("7.1")
-            skip "Will raise a separately tested argument validation error when Postgres doesn't support it" if ActiveRecord::Base.connection.postgresql_version < 15_00_00
-
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_add_concurrent_partitioned_index(
-                  :foos3,
-                  :text_column,
-                  nulls_not_distinct: true
-                )
-              end
-            end
-
-            # Temporarily mock the ActiveRecord version to be < 7.1
-            allow(ActiveRecord).to receive(:gem_version).and_return(Gem::Version.new("7.0.0"))
-
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error(
-              PgHaMigrations::InvalidMigrationError,
-              "nulls_not_distinct option requires ActiveRecord 7.1 or higher"
-            )
-          end
-
           it "raises error when nulls_not_distinct is provided but PostgreSQL < 15" do
-            skip "Will raise a separately tested argument validation error when ActiveRecord doesn't supports it" if ActiveRecord.gem_version < Gem::Version.new("7.1")
-
             create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
