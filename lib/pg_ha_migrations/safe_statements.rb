@@ -141,7 +141,7 @@ module PgHaMigrations::SafeStatements
     validated_table = PgHaMigrations::Table.from_table_name(table)
     tmp_constraint_name = "tmp_not_null_constraint_#{OpenSSL::Digest::SHA256.hexdigest(column.to_s).first(7)}"
 
-    if validated_table.has_constraint?(tmp_constraint_name)
+    if validated_table.check_constraints.any? { |c| c.name == tmp_constraint_name }
       raise PgHaMigrations::InvalidMigrationError, "A constraint #{tmp_constraint_name.inspect} already exists. " \
         "This implies that a previous invocation of this method failed and left behind a temporary constraint. " \
         "Please drop the constraint before attempting to run this method again."
@@ -150,6 +150,10 @@ module PgHaMigrations::SafeStatements
     safe_add_unvalidated_check_constraint(table, "#{connection.quote_column_name(column)} IS NOT NULL", name: tmp_constraint_name)
     safe_validate_check_constraint(table, name: tmp_constraint_name)
 
+    # "Ordinarily this is checked during the ALTER TABLE by scanning the entire table; however, if a
+    # valid CHECK constraint is found which proves no NULL can exist, then the table scan is
+    # skipped."
+    # See: https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-DESC-SET-DROP-NOT-NULL
     unsafe_make_column_not_nullable(table, column)
     unsafe_remove_constraint(table, name: tmp_constraint_name)
   end
@@ -162,32 +166,33 @@ module PgHaMigrations::SafeStatements
     unless constraint_name
       raise ArgumentError, "Expected <constraint_name> to be present"
     end
+    constraint_name = constraint_name.to_s
 
     quoted_table_name = connection.quote_table_name(table)
     quoted_column_name = connection.quote_column_name(column)
 
-    constraint = ActiveRecord::Base.connection.select_one(<<~SQL)
-      SELECT conname, convalidated, pg_get_constraintdef(oid) AS constraint_def
-      FROM pg_constraint
-      WHERE conname = #{connection.quote(constraint_name.to_s)}
-        AND conrelid = #{connection.quote(quoted_table_name)}::regclass
-    SQL
+    validated_table = PgHaMigrations::Table.from_table_name(table)
+    constraint = validated_table.check_constraints.find do |c|
+      c.name == constraint_name
+    end
 
     unless constraint
       raise PgHaMigrations::InvalidMigrationError, "The provided constraint does not exist"
     end
 
-    unless constraint["convalidated"]
+    unless constraint.validated
       raise PgHaMigrations::InvalidMigrationError, "The provided constraint is not validated"
     end
 
-    unless constraint["constraint_def"] =~ /\ACHECK \(*(#{Regexp.escape(column.to_s)}|#{Regexp.escape(quoted_column_name)}) IS NOT NULL\)*\Z/i
+    unless constraint.definition =~ /\ACHECK \(*(#{Regexp.escape(column.to_s)}|#{Regexp.escape(quoted_column_name)}) IS NOT NULL\)*\Z/i
       raise PgHaMigrations::InvalidMigrationError, "The provided constraint does not enforce non-null values for the column"
     end
 
-    safely_acquire_lock_for_table(table) do
-      unsafe_make_column_not_nullable(table, column)
-    end
+    # "Ordinarily this is checked during the ALTER TABLE by scanning the entire table; however, if a
+    # valid CHECK constraint is found which proves no NULL can exist, then the table scan is
+    # skipped."
+    # See: https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-DESC-SET-DROP-NOT-NULL
+    unsafe_make_column_not_nullable(table, column)
   end
 
   def safe_add_index_on_empty_table(table, columns, **options)
