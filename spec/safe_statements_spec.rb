@@ -2504,7 +2504,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
-              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY/)
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/)
             end
@@ -2534,6 +2535,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
@@ -2576,6 +2578,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
@@ -2614,6 +2617,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE UNIQUE INDEX "index_foos3_on_created_at_and_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE UNIQUE INDEX CONCURRENTLY/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
@@ -2653,6 +2657,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
@@ -2692,6 +2697,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_lower_text_column" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
@@ -2737,7 +2743,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3_sub" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_sub_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY/)
@@ -2779,8 +2787,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3_sub" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_sub_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX "public"."index_foos3_sub_on_updated_at"\nATTACH PARTITION/).exactly(10).times.ordered
@@ -2830,6 +2840,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/)
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_on_updated_at" ON ONLY/)
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/)
               expect(ActiveRecord::Base.connection).to_not receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/)
@@ -2871,8 +2882,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times.ordered
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3_sub" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX IF NOT EXISTS "index_foos3_sub_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY IF NOT EXISTS/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX "public"."index_foos3_sub_on_updated_at"\nATTACH PARTITION/).exactly(10).times.ordered
@@ -2907,6 +2920,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3'" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3'_bar""_idx" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "index_foos3'_child_on_updated_at" ON/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
@@ -2952,6 +2966,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "partman"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
@@ -3001,6 +3016,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_foos3_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
@@ -3043,6 +3059,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
 
             aggregate_failures do
+              expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."#{"x" * 42}" IN SHARE MODE/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "index_#{"x" * 42}_on_updated_at" ON ONLY/).once.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "idx_on_updated_at_\w{10}/).exactly(10).times.ordered
               expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).exactly(10).times.ordered
