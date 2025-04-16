@@ -184,6 +184,13 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::InvalidMigrationError, "The provided constraint is not validated"
     end
 
+    # The constraint has to actually prove that no null values exist, so the
+    # constraint condition can't simply include the `IS NOT NULL` check. We
+    # don't try to handle all possible cases here. For example,
+    # `a IS NOT NULL AND b IS NOT NULL` would prove what we need, but it would
+    # be complicated to check. We must ensure, however, that we're not too
+    # loose. For example, `a IS NOT NULL OR b IS NOT NULL` would not prove that
+    # `a IS NOT NULL`.
     unless constraint.definition =~ /\ACHECK \(*(#{Regexp.escape(column.to_s)}|#{Regexp.escape(quoted_column_name)}) IS NOT NULL\)*\Z/i
       raise PgHaMigrations::InvalidMigrationError, "The provided constraint does not enforce non-null values for the column"
     end

@@ -2223,17 +2223,43 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error(PgHaMigrations::InvalidMigrationError, /The provided constraint is not validated/)
           end
 
-          it "raises an error if the CHECK constraint does not enforce non-null values" do
-            migration.suppress_messages do
-              migration.safe_add_unvalidated_check_constraint(:test_table, "column_to_check > 0", name: :check_positive)
-              migration.safe_validate_check_constraint(:test_table, name: :check_positive)
+          describe "raises an error if the CHECK constraint does not enforce non-null values" do
+            it "with an entirely different condition" do
+              migration.suppress_messages do
+                migration.safe_add_unvalidated_check_constraint(:test_table, "column_to_check > 0", name: :check_positive)
+                migration.safe_validate_check_constraint(:test_table, name: :check_positive)
+              end
+
+              expect do
+                migration.suppress_messages do
+                  migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :column_to_check, constraint_name: "check_positive")
+                end
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, /does not enforce non-null values/)
             end
 
-            expect do
+            it "with a prefixed condition" do
               migration.suppress_messages do
-                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :column_to_check, constraint_name: "check_positive")
+                migration.safe_add_column :test_table, :other_column, :integer
+                migration.safe_add_unvalidated_check_constraint(:test_table, "column_to_check IS NOT NULL OR other_column IS NOT NULL", name: :check_a_or_b_not_null)
+                migration.safe_validate_check_constraint(:test_table, name: :check_a_or_b_not_null)
               end
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, /does not enforce non-null values/)
+
+              expect do
+                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :a, constraint_name: :check_a_or_b_not_null)
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, /The provided constraint does not enforce non-null values for the column/)
+            end
+
+            it "with a suffixed condition" do
+              migration.suppress_messages do
+                migration.safe_add_column :test_table, :other_column, :integer
+                migration.safe_add_unvalidated_check_constraint(:test_table, "other_column IS NOT NULL OR column_to_check IS NOT NULL", name: :check_a_or_b_not_null)
+                migration.safe_validate_check_constraint(:test_table, name: :check_a_or_b_not_null)
+              end
+
+              expect do
+                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :a, constraint_name: :check_a_or_b_not_null)
+              end.to raise_error(PgHaMigrations::InvalidMigrationError, /The provided constraint does not enforce non-null values for the column/)
+            end
           end
 
           it "makes the column NOT NULL if the constraint is validated" do
