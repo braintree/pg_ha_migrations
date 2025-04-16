@@ -159,6 +159,11 @@ module PgHaMigrations::SafeStatements
       raise ArgumentError, "Cannot call safe_add_index_on_empty_table with :algorithm => :concurrently"
     end
 
+    # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
+    if options[:nulls_not_distinct] && ActiveRecord::Base.connection.postgresql_version < 15_00_00
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
+    end
+
     # Avoids taking out an unnecessary SHARE lock if the table does have data
     ensure_small_table!(table, empty: true)
 
@@ -171,6 +176,11 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_add_concurrent_index(table, columns, **options)
+    # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
+    if options[:nulls_not_distinct] && ActiveRecord::Base.connection.postgresql_version < 15_00_00
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
+    end
+
     unsafe_add_index(table, columns, **options.merge(:algorithm => :concurrently))
   end
 
@@ -194,8 +204,13 @@ module PgHaMigrations::SafeStatements
     using: nil,
     unique: nil,
     where: nil,
-    comment: nil
+    comment: nil,
+    nulls_not_distinct: nil
   )
+    # Check if nulls_not_distinct was provided but PostgreSQL version doesn't support it
+    if !nulls_not_distinct.nil? && ActiveRecord::Base.connection.postgresql_version < 15_00_00
+      raise PgHaMigrations::InvalidMigrationError, "nulls_not_distinct option requires PostgreSQL 15 or higher"
+    end
 
     if ActiveRecord::Base.connection.postgresql_version < 11_00_00
       raise PgHaMigrations::InvalidMigrationError, "Concurrent partitioned index creation not supported on Postgres databases before version 11"
@@ -226,6 +241,7 @@ module PgHaMigrations::SafeStatements
       if_not_exists: if_not_exists,
       using: using,
       unique: unique,
+      nulls_not_distinct: nulls_not_distinct,
       where: where,
       comment: comment,
       algorithm: :only, # see lib/pg_ha_migrations/hacks/add_index_on_only.rb
@@ -246,6 +262,7 @@ module PgHaMigrations::SafeStatements
         if_not_exists: if_not_exists,
         using: using,
         unique: unique,
+        nulls_not_distinct: nulls_not_distinct,
         where: where,
       )
     end
