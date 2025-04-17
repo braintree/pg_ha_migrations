@@ -196,7 +196,7 @@ safe_make_column_not_nullable :table, :column
 ```
 
 > **Note:**
-> - This method performs a full table scan to validate that no NULL values exist in the column. While no exclusive lock is held for this scan, oon large tables the scan may take a long time.
+> - This method performs a full table scan to validate that no NULL values exist in the column. While no exclusive lock is held for this scan, on large tables the scan may take a long time.
 > - The method runs multiple DDL statements non-transactionally. Validating the constraint can fail. In such cases an exception will be raised, and an INVALID constraint will be left on the table.
 
 If you want to avoid a full table scan and have already added and validated a suitable CHECK constraint, consider using [`safe_make_column_not_nullable_from_check_constraint`](#safe_make_column_not_nullable_from_check_constraint) instead.
@@ -220,7 +220,7 @@ safe_make_column_not_nullable_from_check_constraint :table, :column, constraint_
 - `constraint_name` (required): The name of a validated CHECK constraint that enforces `column IS NOT NULL`.
 - `drop_constraint:` (optional, default: true): Whether to drop the constraint after making the column NOT NULL.
 
-You should use [`safe_make_column_not_nullable`](#safe_make_column_not_nullable_from_check_constraint) when neither a CHECK constraint or a NOT NULL constraint exists already. You should use this method when you already have an equivalent CHECK constraint on the table.
+You should use [`safe_make_column_not_nullable`](#safe_make_column_not_nullable) when neither a CHECK constraint or a NOT NULL constraint exists already. You should use this method when you already have an equivalent CHECK constraint on the table.
 
 This method will raise an error if the constraint does not exist, is not validated, or does not strictly enforce non-null values for the column.
 
