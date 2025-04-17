@@ -2292,6 +2292,44 @@ RSpec.describe PgHaMigrations::SafeStatements do
             column_details = ActiveRecord::Base.connection.columns(:test_table).find { |col| col.name == "other column" }
             expect(column_details.null).to be(false)
           end
+
+          it "drops the constraint by default using only a single table lock" do
+            migration.suppress_messages do
+              migration.safe_validate_check_constraint(:test_table, name: :test_check_constraint)
+            end
+
+            expect do
+              expect do
+                migration.suppress_messages do
+                  migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :column_to_check, constraint_name: :test_check_constraint)
+                end
+              end.to make_database_queries(matching: /LOCK "public"\."test_table" IN ACCESS EXCLUSIVE MODE/, count: 1)
+            end.to change {
+              ActiveRecord::Base.connection.select_value(<<~SQL)
+                SELECT COUNT(*)
+                FROM pg_constraint
+                WHERE conname = 'test_check_constraint'
+              SQL
+            }.from(1).to(0)
+          end
+
+          it "doesn't drop the constraint if the drop_constraint argument is false" do
+            migration.suppress_messages do
+              migration.safe_validate_check_constraint(:test_table, name: :test_check_constraint)
+            end
+
+            expect do
+              migration.suppress_messages do
+                migration.safe_make_column_not_nullable_from_check_constraint(:test_table, :column_to_check, constraint_name: :test_check_constraint, drop_constraint: false)
+              end
+            end.not_to change {
+              ActiveRecord::Base.connection.select_value(<<~SQL)
+                SELECT COUNT(*)
+                FROM pg_constraint
+                WHERE conname = 'test_check_constraint'
+              SQL
+            }
+          end
         end
 
         describe "#safe_set_maintenance_work_mem_gb" do

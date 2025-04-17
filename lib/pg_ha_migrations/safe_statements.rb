@@ -158,7 +158,9 @@ module PgHaMigrations::SafeStatements
     unsafe_remove_constraint(table, name: tmp_constraint_name)
   end
 
-  def safe_make_column_not_nullable_from_check_constraint(table, column, constraint_name:)
+  # This method is a variant of `safe_make_column_not_nullable` that is expected to always be fast;
+  # i.e., it will not perform a full table scan to check for null values.
+  def safe_make_column_not_nullable_from_check_constraint(table, column, constraint_name:, drop_constraint: true)
     unless ActiveRecord::Base.connection.postgresql_version >= 12_00_00
       raise PgHaMigrations::InvalidMigrationError, "Cannot safely make a column non-nullable before Postgres 12"
     end
@@ -195,11 +197,20 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::InvalidMigrationError, "The provided constraint does not enforce non-null values for the column"
     end
 
-    # "Ordinarily this is checked during the ALTER TABLE by scanning the entire table; however, if a
-    # valid CHECK constraint is found which proves no NULL can exist, then the table scan is
-    # skipped."
-    # See: https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-DESC-SET-DROP-NOT-NULL
-    unsafe_make_column_not_nullable(table, column)
+    # We don't want to acquire an exclusive lock on the table twice, and we also don't want it to be
+    # posssible to have the NOT NULL constraint addition succeed while the constraint removal fails,
+    # so we acquire the lock once and do both operations in the same block.
+    safely_acquire_lock_for_table(table) do
+      # "Ordinarily this is checked during the ALTER TABLE by scanning the entire table; however, if a
+      # valid CHECK constraint is found which proves no NULL can exist, then the table scan is
+      # skipped."
+      # See: https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-DESC-SET-DROP-NOT-NULL
+      unsafe_make_column_not_nullable(table, column)
+
+      if drop_constraint
+        unsafe_remove_constraint(table, name: constraint_name)
+      end
+    end
   end
 
   def safe_add_index_on_empty_table(table, columns, **options)
