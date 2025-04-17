@@ -141,7 +141,7 @@ module PgHaMigrations::SafeStatements
     validated_table = PgHaMigrations::Table.from_table_name(table)
     tmp_constraint_name = "tmp_not_null_constraint_#{OpenSSL::Digest::SHA256.hexdigest(column.to_s).first(7)}"
 
-    if validated_table.has_constraint?(tmp_constraint_name)
+    if validated_table.check_constraints.any? { |c| c.name == tmp_constraint_name }
       raise PgHaMigrations::InvalidMigrationError, "A constraint #{tmp_constraint_name.inspect} already exists. " \
         "This implies that a previous invocation of this method failed and left behind a temporary constraint. " \
         "Please drop the constraint before attempting to run this method again."
@@ -150,8 +150,67 @@ module PgHaMigrations::SafeStatements
     safe_add_unvalidated_check_constraint(table, "#{connection.quote_column_name(column)} IS NOT NULL", name: tmp_constraint_name)
     safe_validate_check_constraint(table, name: tmp_constraint_name)
 
+    # "Ordinarily this is checked during the ALTER TABLE by scanning the entire table; however, if a
+    # valid CHECK constraint is found which proves no NULL can exist, then the table scan is
+    # skipped."
+    # See: https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-DESC-SET-DROP-NOT-NULL
     unsafe_make_column_not_nullable(table, column)
     unsafe_remove_constraint(table, name: tmp_constraint_name)
+  end
+
+  # This method is a variant of `safe_make_column_not_nullable` that is expected to always be fast;
+  # i.e., it will not perform a full table scan to check for null values.
+  def safe_make_column_not_nullable_from_check_constraint(table, column, constraint_name:, drop_constraint: true)
+    unless ActiveRecord::Base.connection.postgresql_version >= 12_00_00
+      raise PgHaMigrations::InvalidMigrationError, "Cannot safely make a column non-nullable before Postgres 12"
+    end
+
+    unless constraint_name
+      raise ArgumentError, "Expected <constraint_name> to be present"
+    end
+    constraint_name = constraint_name.to_s
+
+    quoted_table_name = connection.quote_table_name(table)
+    quoted_column_name = connection.quote_column_name(column)
+
+    validated_table = PgHaMigrations::Table.from_table_name(table)
+    constraint = validated_table.check_constraints.find do |c|
+      c.name == constraint_name
+    end
+
+    unless constraint
+      raise PgHaMigrations::InvalidMigrationError, "The provided constraint does not exist"
+    end
+
+    unless constraint.validated
+      raise PgHaMigrations::InvalidMigrationError, "The provided constraint is not validated"
+    end
+
+    # The constraint has to actually prove that no null values exist, so the
+    # constraint condition can't simply include the `IS NOT NULL` check. We
+    # don't try to handle all possible cases here. For example,
+    # `a IS NOT NULL AND b IS NOT NULL` would prove what we need, but it would
+    # be complicated to check. We must ensure, however, that we're not too
+    # loose. For example, `a IS NOT NULL OR b IS NOT NULL` would not prove that
+    # `a IS NOT NULL`.
+    unless constraint.definition =~ /\ACHECK \(*(#{Regexp.escape(column.to_s)}|#{Regexp.escape(quoted_column_name)}) IS NOT NULL\)*\Z/i
+      raise PgHaMigrations::InvalidMigrationError, "The provided constraint does not enforce non-null values for the column"
+    end
+
+    # We don't want to acquire an exclusive lock on the table twice, and we also don't want it to be
+    # posssible to have the NOT NULL constraint addition succeed while the constraint removal fails,
+    # so we acquire the lock once and do both operations in the same block.
+    safely_acquire_lock_for_table(table) do
+      # "Ordinarily this is checked during the ALTER TABLE by scanning the entire table; however, if a
+      # valid CHECK constraint is found which proves no NULL can exist, then the table scan is
+      # skipped."
+      # See: https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-DESC-SET-DROP-NOT-NULL
+      unsafe_make_column_not_nullable(table, column)
+
+      if drop_constraint
+        unsafe_remove_constraint(table, name: constraint_name)
+      end
+    end
   end
 
   def safe_add_index_on_empty_table(table, columns, **options)

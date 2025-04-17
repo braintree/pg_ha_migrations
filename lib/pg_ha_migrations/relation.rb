@@ -113,17 +113,15 @@ module PgHaMigrations
       tables
     end
 
-    def has_constraint?(constraint_name)
-      connection.select_value(<<~SQL)
-        SELECT EXISTS (
-          SELECT 1
-          FROM pg_constraint, pg_class, pg_namespace
-          WHERE pg_class.oid = pg_constraint.conrelid
-            AND pg_class.relnamespace = pg_namespace.oid
-            AND pg_class.relname = #{connection.quote(name)}
-            AND pg_namespace.nspname = #{connection.quote(schema)}
-            AND pg_constraint.conname = #{connection.quote(constraint_name)}
-        )
+    def check_constraints
+      connection.structs_from_sql(PgHaMigrations::CheckConstraint, <<~SQL)
+        SELECT conname AS name, pg_get_constraintdef(pg_constraint.oid) AS definition, convalidated AS validated
+        FROM pg_constraint, pg_class, pg_namespace
+        WHERE pg_class.oid = pg_constraint.conrelid
+          AND pg_class.relnamespace = pg_namespace.oid
+          AND pg_class.relname = #{connection.quote(name)}
+          AND pg_namespace.nspname = #{connection.quote(schema)}
+          AND pg_constraint.contype = 'c' -- 'c' stands for check constraints
       SQL
     end
 
