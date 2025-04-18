@@ -1,100 +1,6 @@
 require "spec_helper"
 
 RSpec.describe PgHaMigrations::SafeStatements do
-  TableLock = Struct.new(:table, :lock_type, :granted, :pid)
-  def locks_for_table(table, connection:)
-    identifiers = table.to_s.split(".")
-
-    identifiers.prepend("public") if identifiers.size == 1
-
-    schema, table = identifiers
-
-    connection.structs_from_sql(TableLock, <<-SQL)
-      SELECT pg_class.relname AS table, pg_locks.mode AS lock_type, granted, pid
-      FROM pg_locks
-      JOIN pg_class ON pg_locks.relation = pg_class.oid
-      JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid
-      WHERE pid IS DISTINCT FROM pg_backend_pid()
-        AND pg_class.relkind IN ('r', 'p') -- 'r' is a standard table; 'p' is a partition parent
-        AND pg_class.relname = '#{table}'
-        AND pg_namespace.nspname = '#{schema}'
-    SQL
-  end
-
-  def partitions_for_table(table, schema: "public")
-    ActiveRecord::Base.connection.select_values(<<~SQL)
-      SELECT child.relname
-      FROM pg_inherits
-        JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-        JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
-        JOIN pg_namespace    ON pg_namespace.oid      = child.relnamespace
-      WHERE parent.relname = '#{table}'
-        AND pg_namespace.nspname = '#{schema}'
-    SQL
-  end
-
-  def grantees_for_table(table)
-    ActiveRecord::Base.connection.select_values(<<~SQL)
-      SELECT DISTINCT(grantee)
-      FROM information_schema.role_table_grants
-      WHERE table_name = '#{table}'
-    SQL
-  end
-
-  def create_range_partitioned_table(table, migration_klass, with_template: false, with_partman: false)
-    migration = Class.new(migration_klass) do
-      class_attribute :table, :with_template, :with_partman, instance_accessor: true
-
-      self.table = table
-      self.with_template = with_template
-      self.with_partman = with_partman
-
-      def up
-        safe_create_partitioned_table table, type: :range, partition_key: :created_at do |t|
-          t.timestamps null: false
-          t.text :text_column
-        end
-
-        if with_template
-          safe_create_table "#{table}_template", id: false do |t|
-            t.text :text_column, index: {unique: true}
-          end
-        end
-
-        if with_partman
-          template_table = with_template ? "#{table}_template" : nil
-
-          safe_partman_create_parent(
-            table,
-            partition_key: :created_at,
-            interval: "weekly",
-            template_table: template_table
-          )
-        end
-      end
-    end
-
-    migration.suppress_messages { migration.migrate(:up) }
-  end
-
-  def enum_names_and_values
-    ActiveRecord::Base.connection.execute(<<~SQL).to_a
-      SELECT pg_type.typname AS name,
-             pg_enum.enumlabel AS value
-      FROM pg_type
-      JOIN pg_enum ON pg_enum.enumtypid = pg_type.oid
-    SQL
-  end
-
-  def pool_config
-    ActiveRecord::ConnectionAdapters::PoolConfig.new(
-      ActiveRecord::Base,
-      ActiveRecord::Base.connection_pool.db_config,
-      ActiveRecord::Base.current_role,
-      ActiveRecord::Base.current_shard
-    )
-  end
-
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
     describe migration_klass do
       let(:schema_migration) do
@@ -1275,7 +1181,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(enum_names_and_values).to contain_exactly(
+            expect(TestHelpers.enum_names_and_values).to contain_exactly(
               {"name" => "bt_foo_enum", "value" => "one"},
               {"name" => "bt_foo_enum", "value" => "two"},
               {"name" => "bt_foo_enum", "value" => "updated"},
@@ -1411,7 +1317,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "updates values and reapplies privileges when inherit_privileges changes from true to false" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               setup_migration = Class.new(migration_klass) do
                 def up
@@ -1449,7 +1355,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "updates values and reapplies privileges when inherit_privileges changes from false to true" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               setup_migration = Class.new(migration_klass) do
                 def up
@@ -1483,7 +1389,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "updates values and does not reapply privileges when inherit_privileges does not change" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               setup_migration = Class.new(migration_klass) do
                 def up
@@ -1525,7 +1431,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when table exists but isn't configured with partman" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -2354,7 +2260,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(enum_names_and_values).to contain_exactly(
+            expect(TestHelpers.enum_names_and_values).to contain_exactly(
               {"name" => "bt_foo_enum", "value" => "one"},
               {"name" => "bt_foo_enum", "value" => "two"},
               {"name" => "bt_foo_enum", "value" => "three"},
@@ -2370,7 +2276,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(enum_names_and_values).to contain_exactly(
+            expect(TestHelpers.enum_names_and_values).to contain_exactly(
               {"name" => "bt_foo_enum", "value" => "one"},
               {"name" => "bt_foo_enum", "value" => "two"},
               {"name" => "bt_foo_enum", "value" => "three"},
@@ -2386,7 +2292,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(enum_names_and_values).to eq([])
+            expect(TestHelpers.enum_names_and_values).to eq([])
           end
 
           it "raises helpfully if no values argument is passed" do
@@ -2413,7 +2319,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            expect(enum_names_and_values).to contain_exactly(
+            expect(TestHelpers.enum_names_and_values).to contain_exactly(
               {"name" => "bt_foo_enum", "value" => "one"},
               {"name" => "bt_foo_enum", "value" => "two"},
               {"name" => "bt_foo_enum", "value" => "three"},
@@ -2678,7 +2584,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index when there are no child partitions" do
-            create_range_partitioned_table(:foos3, migration_klass)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -2709,7 +2615,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index with comment and custom name when multiple child partitions exist" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -2729,7 +2635,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+              tables_with_indexes = TestHelpers.partitions_for_table(:foos3).append(:foos3)
 
               expect(tables_with_indexes.size).to eq(11)
 
@@ -2752,7 +2658,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid hash index when multiple child partitions exist" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -2772,7 +2678,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+              tables_with_indexes = TestHelpers.partitions_for_table(:foos3).append(:foos3)
 
               expect(tables_with_indexes.size).to eq(11)
 
@@ -2791,7 +2697,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid unique index when multiple child partitions exist" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -2811,7 +2717,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+              tables_with_indexes = TestHelpers.partitions_for_table(:foos3).append(:foos3)
 
               expect(tables_with_indexes.size).to eq(11)
 
@@ -2831,7 +2737,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid partial index when multiple child partitions exist" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -2851,7 +2757,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+              tables_with_indexes = TestHelpers.partitions_for_table(:foos3).append(:foos3)
 
               expect(tables_with_indexes.size).to eq(11)
 
@@ -2871,7 +2777,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index using expression when multiple child partitions exist" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -2891,7 +2797,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              tables_with_indexes = partitions_for_table(:foos3).append(:foos3)
+              tables_with_indexes = TestHelpers.partitions_for_table(:foos3).append(:foos3)
 
               expect(tables_with_indexes.size).to eq(11)
 
@@ -2910,8 +2816,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index when sub-partition exists with no child partitions" do
-            create_range_partitioned_table(:foos3, migration_klass)
-            create_range_partitioned_table(:foos3_sub, migration_klass)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+            TestHelpers.create_range_partitioned_table(:foos3_sub, migration_klass)
 
             ActiveRecord::Base.connection.execute(<<~SQL)
               ALTER TABLE foos3
@@ -2954,8 +2860,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index when multiple child partitions and child sub-partitions exist" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
-            create_range_partitioned_table(:foos3_sub, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3_sub, migration_klass, with_partman: true)
 
             ActiveRecord::Base.connection.execute(<<~SQL)
               ALTER TABLE foos3
@@ -2985,8 +2891,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              tables_with_indexes = partitions_for_table(:foos3)
-                .concat(partitions_for_table(:foos3_sub))
+              tables_with_indexes = TestHelpers.partitions_for_table(:foos3)
+                .concat(TestHelpers.partitions_for_table(:foos3_sub))
                 .append(:foos3)
 
               expect(tables_with_indexes.size).to eq(22)
@@ -3006,7 +2912,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "short-circuits when index already valid and if_not_exists is true" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             setup_migration = Class.new(migration_klass) do
               def up
@@ -3035,8 +2941,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index when partially created and if_not_exists is true" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
-            create_range_partitioned_table(:foos3_sub, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3_sub, migration_klass, with_partman: true)
 
             setup_migration = Class.new(migration_klass) do
               def up
@@ -3081,7 +2987,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index when table / index name use non-standard characters" do
-            create_range_partitioned_table("foos3'", migration_klass)
+            TestHelpers.create_range_partitioned_table("foos3'", migration_klass)
 
             # partman does not allow table names with non-standard characters
             # so we need to create a child partition manually
@@ -3131,8 +3037,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index when duplicate table exists in different schema" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
-            create_range_partitioned_table("partman.foos3", migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table("partman.foos3", migration_klass, with_partman: true)
 
             setup_migration = Class.new(migration_klass) do
               def up
@@ -3160,7 +3066,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
-              tables_with_indexes = partitions_for_table(:foos3, schema: "partman").append("foos3")
+              tables_with_indexes = TestHelpers.partitions_for_table(:foos3, schema: "partman").append("foos3")
 
               expect(tables_with_indexes.size).to eq(11)
 
@@ -3179,7 +3085,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "creates valid index when child table exists in different schema" do
-            create_range_partitioned_table(:foos3, migration_klass)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
             setup_migration = Class.new(migration_klass) do
               def up
@@ -3233,7 +3139,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "generates index name with hashed identifier when default child index name is too large" do
-            create_range_partitioned_table("x" * 42, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table("x" * 42, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -3254,7 +3160,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises error when parent index name is too large" do
-            create_range_partitioned_table(:foos3, migration_klass)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -3293,7 +3199,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises error and leaves behind invalid index when child index creation missed" do
-            create_range_partitioned_table(:foos3, migration_klass)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
             ActiveRecord::Base.connection.execute(<<~SQL)
               CREATE TABLE foos3_child1 PARTITION OF foos3
@@ -3338,8 +3244,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises error and leaves behind invalid index when child sub-partition index creation missed" do
-            create_range_partitioned_table(:foos3, migration_klass)
-            create_range_partitioned_table(:foos3_sub, migration_klass)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+            TestHelpers.create_range_partitioned_table(:foos3_sub, migration_klass)
 
             ActiveRecord::Base.connection.execute(<<~SQL)
               ALTER TABLE foos3
@@ -3410,7 +3316,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "creates valid index with nulls_not_distinct when multiple child partitions exist" do
             skip "Won't actually be able to create nulls_not_distinct indexes unless Postgres supports it" if ActiveRecord::Base.connection.postgresql_version < 15_00_00
 
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -3423,7 +3329,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             # Count child partitions to know exactly how many times the method will be called
-            child_tables = partitions_for_table(:foos3)
+            child_tables = TestHelpers.partitions_for_table(:foos3)
             # +1 for the parent table itself
             expected_calls = child_tables.size + 1
 
@@ -3438,7 +3344,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             # Verify the nulls_not_distinct property is actually set on the created indexes
-            tables_with_indexes = partitions_for_table(:foos3).unshift(:foos3)
+            tables_with_indexes = TestHelpers.partitions_for_table(:foos3).unshift(:foos3)
 
             tables_with_indexes.each do |table|
               index_name = "index_#{table}_on_text_column"
@@ -3451,7 +3357,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises error when nulls_not_distinct is provided but PostgreSQL < 15" do
-            create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 
             test_migration = Class.new(migration_klass) do
               def up
@@ -3672,7 +3578,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "doesn't acquire a lock which prevents concurrent reads and writes" do
-            alternate_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(pool_config)
+            alternate_connection_pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(TestHelpers.pool_config)
 
             # The #connection method was deprecated in Rails 7.2 in favor of #lease_connection
             alternate_connection = if alternate_connection_pool.respond_to?(:lease_connection)
@@ -3698,7 +3604,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               waiting_locks = []
               sleep_counter = 0
               until waiting_locks.present? || sleep_counter >= 5
-                waiting_locks = locks_for_table(:foos, connection: alternate_connection).select { |l| !l.granted }
+                waiting_locks = TestHelpers.locks_for_table(:foos, connection: alternate_connection).select { |l| !l.granted }
                 sleep 1
               end
 
@@ -4154,7 +4060,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
         describe "#safe_partman_create_parent" do
           describe "when extension not installed" do
             it "raises error" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -4176,7 +4082,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "creates child partitions with defaults" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -4186,7 +4092,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration.suppress_messages { migration.migrate(:up) }
 
-              child_tables = partitions_for_table(:foos3)
+              child_tables = TestHelpers.partitions_for_table(:foos3)
 
               expect(child_tables.size).to eq(10)
               expect(child_tables).to include("foos3_default")
@@ -4218,7 +4124,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "creates child partitions with defaults" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -4228,7 +4134,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration.suppress_messages { migration.migrate(:up) }
 
-              child_tables = partitions_for_table(:foos3)
+              child_tables = TestHelpers.partitions_for_table(:foos3)
 
               expect(child_tables.size).to eq(10)
               expect(child_tables).to include("foos3_default")
@@ -4249,7 +4155,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "creates child partitions with custom options" do
-              create_range_partitioned_table(:foos3, migration_klass, with_template: true)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_template: true)
 
               migration = Class.new(migration_klass) do
                 class_attribute :current_time, instance_accessor: true
@@ -4278,7 +4184,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               migration.suppress_messages { migration.migrate(:up) }
 
-              child_tables = partitions_for_table(:foos3)
+              child_tables = TestHelpers.partitions_for_table(:foos3)
 
               expect(child_tables.size).to eq(3)
               expect(child_tables).to include("foos3_default")
@@ -4309,8 +4215,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "uses parent table listed first in the search path when multiple present" do
-              create_range_partitioned_table("public.foos3", migration_klass)
-              create_range_partitioned_table("partman.foos3", migration_klass)
+              TestHelpers.create_range_partitioned_table("public.foos3", migration_klass)
+              TestHelpers.create_range_partitioned_table("partman.foos3", migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -4408,7 +4314,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when template table does not exist" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -4422,7 +4328,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when template table does not exist and fully qualified name provided" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -4554,7 +4460,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "applies privileges to new and existing child tables" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               setup_migration = Class.new(migration_klass) do
                 def up
@@ -4569,11 +4475,11 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               setup_migration.suppress_messages { setup_migration.migrate(:up) }
 
-              child_tables = partitions_for_table(:foos3)
+              child_tables = TestHelpers.partitions_for_table(:foos3)
 
               # post setup validation
               child_tables.each do |table|
-                grantees = grantees_for_table(table)
+                grantees = TestHelpers.grantees_for_table(table)
 
                 # the role was added after the partitions were created
                 # and is not automatically propagated
@@ -4591,7 +4497,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
               # post reapply privileges validation
               child_tables.each do |table|
-                grantees = grantees_for_table(table)
+                grantees = TestHelpers.grantees_for_table(table)
 
                 # existing child tables should get privileges from parent after reapplying
                 expect(grantees).to contain_exactly("postgres", "foo")
@@ -4605,12 +4511,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
               # create additional child partitions
               ActiveRecord::Base.connection.execute("CALL public.run_maintenance_proc()")
 
-              new_child_tables = partitions_for_table(:foos3)
+              new_child_tables = TestHelpers.partitions_for_table(:foos3)
 
               expect(new_child_tables.size).to be > child_tables.size
 
               new_child_tables.each do |table|
-                grantees = grantees_for_table(table)
+                grantees = TestHelpers.grantees_for_table(table)
 
                 # new child tables automatically get privileges from parent
                 expect(grantees).to contain_exactly("postgres", "foo")
@@ -4642,7 +4548,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
 
             it "raises error when table exists but isn't managed by partman" do
-              create_range_partitioned_table(:foos3, migration_klass)
+              TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
               migration = Class.new(migration_klass) do
                 def up
@@ -4906,7 +4812,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
     ["bogus_table", :bogus_table, "public.bogus_table"].each do |table_name|
       describe "#safely_acquire_lock_for_table #{table_name} of type #{table_name.class.name}" do
         let(:alternate_connection_pool) do
-          ActiveRecord::ConnectionAdapters::ConnectionPool.new(pool_config)
+          ActiveRecord::ConnectionAdapters::ConnectionPool.new(TestHelpers.pool_config)
         end
         let(:alternate_connection) do
           # The #connection method was deprecated in Rails 7.2 in favor of #lease_connection
@@ -4947,7 +4853,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
         it "acquires an exclusive lock on the table by default" do
           migration.safely_acquire_lock_for_table(table_name) do
-            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "AccessExclusiveLock",
@@ -4960,7 +4866,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
         it "acquires exclusive locks by default when multiple tables provided" do
           migration.safely_acquire_lock_for_table(table_name, "bogus_table_2") do
-            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "AccessExclusiveLock",
@@ -4969,7 +4875,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
             )
 
-            expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table_2",
                 lock_type: "AccessExclusiveLock",
@@ -4982,7 +4888,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
         it "acquires a lock in a different mode when provided" do
           migration.safely_acquire_lock_for_table(table_name, mode: :share) do
-            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "ShareLock",
@@ -4995,7 +4901,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
         it "acquires locks in a different mode when multiple tables and mode provided" do
           migration.safely_acquire_lock_for_table(table_name, "bogus_table_2", mode: :share_row_exclusive) do
-            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "ShareRowExclusiveLock",
@@ -5004,7 +4910,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
             )
 
-            expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table_2",
                 lock_type: "ShareRowExclusiveLock",
@@ -5032,12 +4938,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
           rescue
             # Throw away error.
           end
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
         it "releases the lock even after a swallowed postgres exception" do
           migration.safely_acquire_lock_for_table(table_name) do
-            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "AccessExclusiveLock",
@@ -5051,21 +4957,21 @@ RSpec.describe PgHaMigrations::SafeStatements do
             rescue
             end
 
-            expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
 
             expect do
               migration.connection.execute("SELECT * FROM bogus_table")
             end.to raise_error(ActiveRecord::StatementInvalid, /PG::InFailedSqlTransaction/)
           end
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
         it "waits to acquire a lock if the table is already blocked" do
           block_call_count = 0
           expect(PgHaMigrations::BlockingDatabaseTransactions).to receive(:find_blocking_transactions).exactly(3).times do |*args|
             # Verify that the method under test hasn't taken out a lock.
-            expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
 
             block_call_count += 1
             if block_call_count < 3
@@ -5077,7 +4983,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
           migration.suppress_messages do
             migration.safely_acquire_lock_for_table(table_name) do
-              expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
             end
           end
         end
@@ -5105,8 +5011,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
             migration.suppress_messages do
               migration.safely_acquire_lock_for_table(table_name, "bogus_table_2") do
                 aggregate_failures do
-                  expect(locks_for_table(table_name, connection: alternate_connection_2)).not_to be_empty
-                  expect(locks_for_table("bogus_table_2", connection: alternate_connection_2)).not_to be_empty
+                  expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection_2)).not_to be_empty
+                  expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection_2)).not_to be_empty
                 end
               end
             end
@@ -5134,7 +5040,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages do
               migration.safely_acquire_lock_for_table(table_name, mode: :access_share) do
-                locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+                locks_for_table = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
 
                 aggregate_failures do
                   expect(locks_for_table).to contain_exactly(
@@ -5181,7 +5087,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages do
               migration.safely_acquire_lock_for_table(table_name, mode: :share_row_exclusive) do
-                expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+                expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
                   having_attributes(
                     table: "bogus_table",
                     lock_type: "ShareRowExclusiveLock",
@@ -5217,8 +5123,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages do
               migration.safely_acquire_lock_for_table(table_name) do
-                locks_for_table = locks_for_table(table_name, connection: alternate_connection)
-                locks_for_other_table = locks_for_table("partman.bogus_table", connection: alternate_connection)
+                locks_for_table = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
+                locks_for_other_table = TestHelpers.locks_for_table("partman.bogus_table", connection: alternate_connection)
 
                 aggregate_failures do
                   expect(locks_for_table).to contain_exactly(
@@ -5252,7 +5158,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
 
           ActiveRecord::Base.connection.drop_table(table_name)
-          create_range_partitioned_table(table_name, migration_klass, with_partman: true)
+          TestHelpers.create_range_partitioned_table(table_name, migration_klass, with_partman: true)
 
           begin
             thread = Thread.new do
@@ -5271,8 +5177,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages do
               migration.safely_acquire_lock_for_table(table_name) do
-                locks_for_parent = locks_for_table(table_name, connection: alternate_connection)
-                locks_for_child = locks_for_table("bogus_table_default", connection: alternate_connection)
+                locks_for_parent = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
+                locks_for_child = TestHelpers.locks_for_table("bogus_table_default", connection: alternate_connection)
 
                 aggregate_failures do
                   expect(locks_for_parent).to contain_exactly(
@@ -5306,8 +5212,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           stub_const("PgHaMigrations::LOCK_TIMEOUT_SECONDS", 1)
 
           ActiveRecord::Base.connection.drop_table(table_name)
-          create_range_partitioned_table(table_name, migration_klass)
-          create_range_partitioned_table("#{table_name}_sub", migration_klass, with_partman: true)
+          TestHelpers.create_range_partitioned_table(table_name, migration_klass)
+          TestHelpers.create_range_partitioned_table("#{table_name}_sub", migration_klass, with_partman: true)
           ActiveRecord::Base.connection.execute(<<~SQL)
             ALTER TABLE bogus_table
             ATTACH PARTITION bogus_table_sub
@@ -5331,8 +5237,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages do
               migration.safely_acquire_lock_for_table(table_name) do
-                locks_for_parent = locks_for_table(table_name, connection: alternate_connection)
-                locks_for_sub = locks_for_table("bogus_table_sub_default", connection: alternate_connection)
+                locks_for_parent = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
+                locks_for_sub = TestHelpers.locks_for_table("bogus_table_sub_default", connection: alternate_connection)
 
                 aggregate_failures do
                   expect(locks_for_parent).to contain_exactly(
@@ -5386,8 +5292,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration.suppress_messages do
               migration.safely_acquire_lock_for_table(table_name) do
-                locks_for_parent = locks_for_table(table_name, connection: alternate_connection)
-                locks_for_child = locks_for_table("bogus_table_child", connection: alternate_connection)
+                locks_for_parent = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
+                locks_for_child = TestHelpers.locks_for_table("bogus_table_child", connection: alternate_connection)
 
                 aggregate_failures do
                   expect(locks_for_parent).to contain_exactly(
@@ -5448,13 +5354,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
               # First lock attempt should fail fast.
               expect(Time.now - time_before_lock_calls).to be >= 1.seconds
               expect(Time.now - time_before_lock_calls).to be < 5.seconds
-              expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
 
               expect(migration).to receive(:sleep).with(1 * PgHaMigrations::LOCK_FAILURE_RETRY_DELAY_MULTLIPLIER) # Stubbed seconds times multiplier
             else
               # Second lock attempt should succeed.
               expect(exception).not_to be_present
-              expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
             end
 
             if exception
@@ -5512,7 +5418,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
         it "allows re-entrancy" do
           migration.safely_acquire_lock_for_table(table_name) do
             migration.safely_acquire_lock_for_table(table_name) do
-              expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
                 having_attributes(
                   table: "bogus_table",
                   lock_type: "AccessExclusiveLock",
@@ -5522,7 +5428,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
             end
 
-            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "AccessExclusiveLock",
@@ -5532,7 +5438,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             )
           end
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
         it "allows re-entrancy when multiple tables provided" do
@@ -5540,7 +5446,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             # The ordering of the args is intentional here to ensure
             # the array sorting and equality logic works as intended
             migration.safely_acquire_lock_for_table("bogus_table_2", table_name) do
-              expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
                 having_attributes(
                   table: "bogus_table",
                   lock_type: "AccessExclusiveLock",
@@ -5549,7 +5455,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 ),
               )
 
-              expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+              expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
                 having_attributes(
                   table: "bogus_table_2",
                   lock_type: "AccessExclusiveLock",
@@ -5559,7 +5465,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
             end
 
-            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "AccessExclusiveLock",
@@ -5568,7 +5474,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               ),
             )
 
-            expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table_2",
                 lock_type: "AccessExclusiveLock",
@@ -5578,14 +5484,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
             )
           end
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
-          expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
         end
 
         it "allows re-entrancy when multiple tables provided and nested lock targets a subset of tables" do
           migration.safely_acquire_lock_for_table(table_name, "bogus_table_2") do
             migration.safely_acquire_lock_for_table(table_name) do
-              expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
                 having_attributes(
                   table: "bogus_table",
                   lock_type: "AccessExclusiveLock",
@@ -5594,7 +5500,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 ),
               )
 
-              expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+              expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
                 having_attributes(
                   table: "bogus_table_2",
                   lock_type: "AccessExclusiveLock",
@@ -5604,7 +5510,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
             end
 
-            expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table",
                 lock_type: "AccessExclusiveLock",
@@ -5613,7 +5519,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               ),
             )
 
-            expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
+            expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to contain_exactly(
               having_attributes(
                 table: "bogus_table_2",
                 lock_type: "AccessExclusiveLock",
@@ -5623,14 +5529,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
             )
           end
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
-          expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
         end
 
         it "does not allow re-entrancy when multiple tables provided and nested lock targets a superset of tables" do
           expect do
             migration.safely_acquire_lock_for_table(table_name) do
-              expect(locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to contain_exactly(
                 having_attributes(
                   table: "bogus_table",
                   lock_type: "AccessExclusiveLock",
@@ -5646,14 +5552,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
             "Nested lock detected! Cannot acquire lock on \"public\".\"bogus_table\", \"public\".\"bogus_table_2\" while \"public\".\"bogus_table\" is locked."
           )
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
-          expect(locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table("bogus_table_2", connection: alternate_connection)).to be_empty
         end
 
         it "allows re-entrancy when inner lock is a lower level" do
           migration.safely_acquire_lock_for_table(table_name) do
             migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) do
-              locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+              locks_for_table = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
 
               # We skip the actual ExclusiveLock acquisition in Postgres
               # since the parent lock is a higher level
@@ -5667,7 +5573,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
             end
 
-            locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+            locks_for_table = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
 
             expect(locks_for_table).to contain_exactly(
               having_attributes(
@@ -5679,14 +5585,14 @@ RSpec.describe PgHaMigrations::SafeStatements do
             )
           end
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
         it "allows re-entrancy when escalating inner lock but not the parent lock" do
           migration.safely_acquire_lock_for_table(table_name) do
             migration.safely_acquire_lock_for_table(table_name, mode: :share) do
               migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) do
-                locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+                locks_for_table = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
 
                 # We skip the actual ShareLock / ExclusiveLock acquisition
                 # in Postgres since the parent lock is a higher level
@@ -5701,7 +5607,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end
 
-            locks_for_table = locks_for_table(table_name, connection: alternate_connection)
+            locks_for_table = TestHelpers.locks_for_table(table_name, connection: alternate_connection)
 
             expect(locks_for_table).to contain_exactly(
               having_attributes(
@@ -5713,13 +5619,13 @@ RSpec.describe PgHaMigrations::SafeStatements do
             )
           end
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
         it "does not allow re-entrancy when lock escalation detected" do
           expect do
             migration.safely_acquire_lock_for_table(table_name, mode: :share) do
-              expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
 
               # attempting a nested lock twice to ensure the
               # thread variable doesn't incorrectly get reset
@@ -5731,7 +5637,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
 
               # the exception above was caught and therefore the parent lock shouldn't be released yet
-              expect(locks_for_table(table_name, connection: alternate_connection)).to_not be_empty
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to_not be_empty
 
               migration.safely_acquire_lock_for_table(table_name, mode: :exclusive) {}
             end
@@ -5740,7 +5646,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             "Lock escalation detected! Cannot change lock level from :share to :exclusive for \"public\".\"bogus_table\"."
           )
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
         it "skips blocking query check for nested lock acquisition" do
@@ -5759,7 +5665,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               sleep 2
 
               migration.safely_acquire_lock_for_table(table_name) do
-                expect(locks_for_table(table_name, connection: alternate_connection_2)).to contain_exactly(
+                expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection_2)).to contain_exactly(
                   having_attributes(
                     table: "bogus_table",
                     lock_type: "AccessExclusiveLock",
@@ -5779,7 +5685,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             query_thread.join if query_thread
           end
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
 
         it "raises error when attempting nested lock on different table" do
@@ -5787,7 +5693,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
           expect do
             migration.safely_acquire_lock_for_table(table_name) do
-              expect(locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
+              expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).not_to be_empty
 
               # attempting a nested lock twice to ensure the
               # thread variable doesn't incorrectly get reset
@@ -5805,7 +5711,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             "Nested lock detected! Cannot acquire lock on \"public\".\"foo\" while \"public\".\"bogus_table\" is locked."
           )
 
-          expect(locks_for_table(table_name, connection: alternate_connection)).to be_empty
+          expect(TestHelpers.locks_for_table(table_name, connection: alternate_connection)).to be_empty
         end
       end
     end
