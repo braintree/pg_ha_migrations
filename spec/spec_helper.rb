@@ -1,6 +1,4 @@
 require "bundler/setup"
-# In Rails 6 this isn't required in the right order and worked by accident; fixed in rails@0f5e7a66143
-require "logger"
 require "pg_ha_migrations"
 require "db-query-matchers"
 require "pry"
@@ -40,12 +38,7 @@ ActiveRecord::Base.configurations = {
   },
 }
 
-config =
-  if ActiveRecord::VERSION::MAJOR < 7
-    ActiveRecord::Base.configurations["test"]
-  else
-    ActiveRecord::Base.configurations.configs_for(env_name: "test").first
-  end
+config = ActiveRecord::Base.configurations.configs_for(env_name: "test").first
 
 # Avoid having to require Rails when the task references `Rails.env`.
 ActiveRecord::Tasks::DatabaseTasks.instance_variable_set('@env', "test")
