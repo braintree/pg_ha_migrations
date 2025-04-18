@@ -144,9 +144,7 @@ Unsafely change the value of an enum type entry.
 unsafe_rename_enum_value(:enum, "old_value", "new_value")
 ```
 
-Note:
-
-Changing an enum value does not issue any long-running scans or acquire locks on usages of the enum type. Therefore multiple queries within a transaction concurrent with the change may see both the old and new values. To highlight these potential pitfalls no `safe_rename_enum_value` equivalent exists. Before modifying an enum type entry you should verify that no concurrently executing queries will attempt to write the old value and that read queries understand the new value.
+> **Note:** Changing an enum value does not issue any long-running scans or acquire locks on usages of the enum type. Therefore multiple queries within a transaction concurrent with the change may see both the old and new values. To highlight these potential pitfalls no `safe_rename_enum_value` equivalent exists. Before modifying an enum type entry you should verify that no concurrently executing queries will attempt to write the old value and that read queries understand the new value.
 
 #### safe\_add\_column
 
@@ -178,7 +176,7 @@ safe_change_column_default :table, :column, -> { "NOW()" }
 safe_change_column_default :table, :column, -> { "'NOW()'" }
 ```
 
-Note: On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = false` [in your configuration initializer](#configuration).
+> **Note:** On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = false` [in your configuration initializer](#configuration).
 
 #### safe\_make\_column\_nullable
 
@@ -224,7 +222,7 @@ You should use [`safe_make_column_not_nullable`](#safe_make_column_not_nullable)
 
 This method will raise an error if the constraint does not exist, is not validated, or does not strictly enforce non-null values for the column.
 
-> **Note:**  We do not attempt to catch all possible proofs of `column IS NOT NULL` by means of an existing constraint; only a constraint with the exact definition `column IS NOT NULL` will be recognized.
+> **Note:** We do not attempt to catch all possible proofs of `column IS NOT NULL` by means of an existing constraint; only a constraint with the exact definition `column IS NOT NULL` will be recognized.
 
 #### safe\_add\_index\_on\_empty\_table
 
@@ -285,11 +283,10 @@ Add a composite index using the `hash` index type with custom name for the paren
 safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name: "custom_name_idx", using: :hash
 ```
 
-Note:
-
-This method runs multiple DDL statements non-transactionally.
-Creating or attaching an index on a child table could fail.
-In such cases an exception will be raised, and an `INVALID` index will be left on the parent table.
+> **Note:**
+> This method runs multiple DDL statements non-transactionally.
+> Creating or attaching an index on a child table could fail.
+> In such cases an exception will be raised, and an `INVALID` index will be left on the parent table.
 
 #### safe\_add\_unvalidated\_check\_constraint
 
@@ -383,7 +380,7 @@ The rest are keyword args with the following mappings:
 - `premake` -> `p_premake`. Required: `false`. Partman defaults to `4`.
 - `start_partition` -> `p_start_partition`. Required: `false`. Partman defaults to the current timestamp.
 
-Note that we have chosen to require PostgreSQL 11+ and hardcode `p_type` to `native` for simplicity, as previous PostgreSQL versions are end-of-life.
+> **Note:** We have chosen to require PostgreSQL 11+ and hardcode `p_type` to `native` for simplicity, as previous PostgreSQL versions are end-of-life.
 
 Additionally, this method allows you to configure a subset of attributes on the record stored in the [part\_config](https://github.com/pgpartman/pg_partman/blob/master/doc/pg_partman.md#tables) table.
 These options are delegated to the `unsafe_partman_update_config` method to update the record:
@@ -442,7 +439,7 @@ Allowed keyword args:
 - `retention`
 - `retention_keep_table`
 
-Note that we detect if the value of `inherit_privileges` is changing and will automatically call `safe_partman_reapply_privileges` to ensure permissions are propagated to existing child partitions.
+> **Note:** If `inherit_privileges` will change then `safe_partman_reapply_privileges` will be automatically called to ensure permissions are propagated to existing child partitions.
 
 ```ruby
 safe_partman_update_config :table,
@@ -505,10 +502,8 @@ safely_acquire_lock_for_table(:table_a, :table_b, mode: :exclusive) do
 end
 ```
 
-Note:
-
-We enforce that only one set of tables can be locked at a time.
-Attempting to acquire a nested lock on a different set of tables will result in an error.
+> **Note:** We enforce that only one set of tables can be locked at a time.
+> Attempting to acquire a nested lock on a different set of tables will result in an error.
 
 #### adjust\_lock\_timeout
 
@@ -606,7 +601,7 @@ To install this gem onto your local machine, run `bundle exec rake install`.
 
 To release a new version, update the version number in `version.rb`, commit the change, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and tags, and push the `.gem` file to [rubygems.org](https://rubygems.org).
 
-Note: if while releasing the gem you get the error ``Your rubygems.org credentials aren't set. Run `gem push` to set them.`` you can more simply run `gem signin`.
+> **Note:** If while releasing the gem you get the error ``Your rubygems.org credentials aren't set. Run `gem push` to set them.`` you can more simply run `gem signin`.
 
 ## Contributing
 
