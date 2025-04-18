@@ -144,9 +144,7 @@ Unsafely change the value of an enum type entry.
 unsafe_rename_enum_value(:enum, "old_value", "new_value")
 ```
 
-Note:
-
-Changing an enum value does not issue any long-running scans or acquire locks on usages of the enum type. Therefore multiple queries within a transaction concurrent with the change may see both the old and new values. To highlight these potential pitfalls no `safe_rename_enum_value` equivalent exists. Before modifying an enum type entry you should verify that no concurrently executing queries will attempt to write the old value and that read queries understand the new value.
+> **Note:** Changing an enum value does not issue any long-running scans or acquire locks on usages of the enum type. Therefore multiple queries within a transaction concurrent with the change may see both the old and new values. To highlight these potential pitfalls no `safe_rename_enum_value` equivalent exists. Before modifying an enum type entry you should verify that no concurrently executing queries will attempt to write the old value and that read queries understand the new value.
 
 #### safe\_add\_column
 
@@ -178,7 +176,7 @@ safe_change_column_default :table, :column, -> { "NOW()" }
 safe_change_column_default :table, :column, -> { "'NOW()'" }
 ```
 
-Note: On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = false` [in your configuration initializer](#configuration).
+> **Note:** On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = false` [in your configuration initializer](#configuration).
 
 #### safe\_make\_column\_nullable
 
@@ -224,7 +222,7 @@ You should use [`safe_make_column_not_nullable`](#safe_make_column_not_nullable)
 
 This method will raise an error if the constraint does not exist, is not validated, or does not strictly enforce non-null values for the column.
 
-> **Note:**  We do not attempt to catch all possible proofs of `column IS NOT NULL` by means of an existing constraint; only a constraint with the exact definition `column IS NOT NULL` will be recognized.
+> **Note:** We do not attempt to catch all possible proofs of `column IS NOT NULL` by means of an existing constraint; only a constraint with the exact definition `column IS NOT NULL` will be recognized.
 
 #### safe\_add\_index\_on\_empty\_table
 
@@ -505,10 +503,8 @@ safely_acquire_lock_for_table(:table_a, :table_b, mode: :exclusive) do
 end
 ```
 
-Note:
-
-We enforce that only one set of tables can be locked at a time.
-Attempting to acquire a nested lock on a different set of tables will result in an error.
+> **Note:** We enforce that only one set of tables can be locked at a time.
+> Attempting to acquire a nested lock on a different set of tables will result in an error.
 
 #### adjust\_lock\_timeout
 
