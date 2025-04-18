@@ -283,11 +283,10 @@ Add a composite index using the `hash` index type with custom name for the paren
 safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name: "custom_name_idx", using: :hash
 ```
 
-Note:
-
-This method runs multiple DDL statements non-transactionally.
-Creating or attaching an index on a child table could fail.
-In such cases an exception will be raised, and an `INVALID` index will be left on the parent table.
+> **Note:**
+> This method runs multiple DDL statements non-transactionally.
+> Creating or attaching an index on a child table could fail.
+> In such cases an exception will be raised, and an `INVALID` index will be left on the parent table.
 
 #### safe\_add\_unvalidated\_check\_constraint
 
@@ -381,7 +380,7 @@ The rest are keyword args with the following mappings:
 - `premake` -> `p_premake`. Required: `false`. Partman defaults to `4`.
 - `start_partition` -> `p_start_partition`. Required: `false`. Partman defaults to the current timestamp.
 
-Note that we have chosen to require PostgreSQL 11+ and hardcode `p_type` to `native` for simplicity, as previous PostgreSQL versions are end-of-life.
+> **Note:** We have chosen to require PostgreSQL 11+ and hardcode `p_type` to `native` for simplicity, as previous PostgreSQL versions are end-of-life.
 
 Additionally, this method allows you to configure a subset of attributes on the record stored in the [part\_config](https://github.com/pgpartman/pg_partman/blob/master/doc/pg_partman.md#tables) table.
 These options are delegated to the `unsafe_partman_update_config` method to update the record:
@@ -440,7 +439,7 @@ Allowed keyword args:
 - `retention`
 - `retention_keep_table`
 
-Note that we detect if the value of `inherit_privileges` is changing and will automatically call `safe_partman_reapply_privileges` to ensure permissions are propagated to existing child partitions.
+> **Note:** If `inherit_privileges` will change then `safe_partman_reapply_privileges` will be automatically called to ensure permissions are propagated to existing child partitions.
 
 ```ruby
 safe_partman_update_config :table,
@@ -602,7 +601,7 @@ To install this gem onto your local machine, run `bundle exec rake install`.
 
 To release a new version, update the version number in `version.rb`, commit the change, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and tags, and push the `.gem` file to [rubygems.org](https://rubygems.org).
 
-Note: if while releasing the gem you get the error ``Your rubygems.org credentials aren't set. Run `gem push` to set them.`` you can more simply run `gem signin`.
+> **Note:** If while releasing the gem you get the error ``Your rubygems.org credentials aren't set. Run `gem push` to set them.`` you can more simply run `gem signin`.
 
 ## Contributing
 
