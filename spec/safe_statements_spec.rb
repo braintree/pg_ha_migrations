@@ -87,18 +87,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
   end
 
   def pool_config
-    if ActiveRecord.gem_version >= Gem::Version.new("7.0")
-      ActiveRecord::ConnectionAdapters::PoolConfig.new(
-        ActiveRecord::Base,
-        ActiveRecord::Base.connection_pool.db_config,
-        ActiveRecord::Base.current_role,
-        ActiveRecord::Base.current_shard
-      )
-    elsif ActiveRecord.gem_version >= Gem::Version.new("6.1")
-      ActiveRecord::ConnectionAdapters::PoolConfig.new(ActiveRecord::Base, ActiveRecord::Base.connection_pool.db_config)
-    else
-      ActiveRecord::Base.connection_pool.spec
-    end
+    ActiveRecord::ConnectionAdapters::PoolConfig.new(
+      ActiveRecord::Base,
+      ActiveRecord::Base.connection_pool.db_config,
+      ActiveRecord::Base.current_role,
+      ActiveRecord::Base.current_shard
+    )
   end
 
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|
