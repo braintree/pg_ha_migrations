@@ -139,23 +139,39 @@ module PgHaMigrations::SafeStatements
     end
 
     validated_table = PgHaMigrations::Table.from_table_name(table)
-    tmp_constraint_name = "tmp_not_null_constraint_#{OpenSSL::Digest::SHA256.hexdigest(column.to_s).first(7)}"
+    quoted_column_name = connection.quote_column_name(column)
+    column_str = column.to_s
 
-    if validated_table.check_constraints.any? { |c| c.name == tmp_constraint_name }
-      raise PgHaMigrations::InvalidMigrationError, "A constraint #{tmp_constraint_name.inspect} already exists. " \
-        "This implies that a previous invocation of this method failed and left behind a temporary constraint. " \
-        "Please drop the constraint before attempting to run this method again."
+    # First, look for existing constraints that match the IS NOT NULL pattern for this column
+    existing_constraint = validated_table.check_constraints.select do |c|
+      c.definition =~ /\ACHECK \(*(#{Regexp.escape(column_str)}|#{Regexp.escape(quoted_column_name)}) IS NOT NULL\)*\Z/i
+    end.first
+
+    constraint_name = nil
+    if existing_constraint
+      if existing_constraint.validated
+        say "Found existing validated constraint #{existing_constraint.inspect} for column #{column_str}, using it directly"
+      else
+        say "Found existing unvalidated constraint #{existing_constraint.inspect} for column #{column_str}, validating it first"
+        safe_validate_check_constraint(table, name: existing_constraint.name)
+      end
+      constraint_name = existing_constraint.name
+    else
+      # Create a temporary constraint if no matching constraints exist
+      constraint_name = "tmp_not_null_constraint_#{OpenSSL::Digest::SHA256.hexdigest(column.to_s).first(7)}"
+
+      safe_add_unvalidated_check_constraint(table, "#{quoted_column_name} IS NOT NULL", name: constraint_name)
+      safe_validate_check_constraint(table, name: constraint_name)
     end
-
-    safe_add_unvalidated_check_constraint(table, "#{connection.quote_column_name(column)} IS NOT NULL", name: tmp_constraint_name)
-    safe_validate_check_constraint(table, name: tmp_constraint_name)
 
     # "Ordinarily this is checked during the ALTER TABLE by scanning the entire table; however, if a
     # valid CHECK constraint is found which proves no NULL can exist, then the table scan is
     # skipped."
     # See: https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-DESC-SET-DROP-NOT-NULL
     unsafe_make_column_not_nullable(table, column)
-    unsafe_remove_constraint(table, name: tmp_constraint_name)
+
+    # Always drop the constraint at the end, whether it was existing or temporary
+    unsafe_remove_constraint(table, name: constraint_name)
   end
 
   # This method is a variant of `safe_make_column_not_nullable` that is expected to always be fast;

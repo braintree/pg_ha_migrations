@@ -187,15 +187,15 @@ safe_make_column_nullable :table, :column
 ```
 #### safe\_make\_column\_not\_nullable
 
-Safely make the column not nullable - adds a temporary constraint and uses that constraint to validate no values are null before altering the column, then removes the temporary constraint.
+Safely make the column not nullable. This method uses a `CHECK column IS NOT NULL` constraint to validate no values are null before altering the column. If such a constraint exists already, it is re-used, if it does not, a temporary constraint is added. Whether or not the constraint already existed, the constraint will be validated, if necessary, and removed after the column is marked `NOT NULL`.
 
 ```ruby
 safe_make_column_not_nullable :table, :column
 ```
 
 > **Note:**
-> - This method performs a full table scan to validate that no NULL values exist in the column. While no exclusive lock is held for this scan, on large tables the scan may take a long time.
-> - The method runs multiple DDL statements non-transactionally. Validating the constraint can fail. In such cases an exception will be raised, and an INVALID constraint will be left on the table.
+> - This method may perform a full table scan to validate that no NULL values exist in the column. While no exclusive lock is held for this scan, on large tables the scan may take a long time.
+> - The method runs multiple DDL statements non-transactionally. Validating the constraint can fail. In such cases an INVALID constraint will be left on the table. Calling `safe_make_column_not_nullable` again is safe.
 
 If you want to avoid a full table scan and have already added and validated a suitable CHECK constraint, consider using [`safe_make_column_not_nullable_from_check_constraint`](#safe_make_column_not_nullable_from_check_constraint) instead.
 

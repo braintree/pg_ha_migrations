@@ -574,67 +574,143 @@ RSpec.describe PgHaMigrations::SafeStatements do
             .to be_empty
         end
 
-        it "raises error if previous invocation left behind temporary constraint" do
+        it "uses an existing validated constraint with matching definition instead of creating a new one" do
+          # First, set up a table with a column
           setup_migration = Class.new(migration_klass) do
             def up
-              unsafe_create_table :foos do |t|
-                t.text :bar
+              safe_create_table(:test_notnull) do |t|
+                t.string :column_with_constraint
               end
-              safe_make_column_not_nullable :foos, :bar
             end
           end
-
-          allow(ActiveRecord::Base.connection).to receive(:execute).and_wrap_original do |m, *args|
-            m.call(*args) unless args.first =~ /DROP CONSTRAINT "tmp_not_null_constraint_fcde2b2"/
-          end
-
           setup_migration.suppress_messages { setup_migration.migrate(:up) }
 
-          migration = Class.new(migration_klass) do
+          # Add and validate a constraint that matches what safe_make_column_not_nullable would create
+          constraint_setup = Class.new(migration_klass) do
             def up
-              safe_make_column_not_nullable :foos, :bar
+              safe_add_unvalidated_check_constraint(:test_notnull, "column_with_constraint IS NOT NULL", name: "existing_not_null_check")
+              safe_validate_check_constraint(:test_notnull, name: "existing_not_null_check")
             end
           end
+          constraint_setup.suppress_messages { constraint_setup.migrate(:up) }
 
+          # Set up spies to ensure methods aren't called unnecessarily
+          migration = Class.new(migration_klass).new
+          expect(migration).to receive(:unsafe_make_column_not_nullable).with(:test_notnull, :column_with_constraint).and_call_original
+          expect(migration).to receive(:unsafe_remove_constraint).with(:test_notnull, name: "existing_not_null_check").and_call_original
+          expect(migration).not_to receive(:safe_add_unvalidated_check_constraint)
+          expect(migration).not_to receive(:safe_validate_check_constraint)
+
+          # Call the method that should use the existing constraint
           expect do
-            migration.suppress_messages { migration.migrate(:up) }
-          end.to raise_error(PgHaMigrations::InvalidMigrationError, /A constraint "tmp_not_null_constraint_fcde2b2" already exists/)
-
-          expect(ActiveRecord::Base.connection.select_values("SELECT conname FROM pg_constraint WHERE conname like 'tmp%'"))
-            .to contain_exactly("tmp_not_null_constraint_fcde2b2")
+            migration.suppress_messages do
+              migration.safe_make_column_not_nullable(:test_notnull, :column_with_constraint)
+            end
+          end.to change {
+            # Verify the constraint was dropped
+            ActiveRecord::Base.connection.select_value("SELECT COUNT(*) FROM pg_constraint WHERE conrelid = 'test_notnull'::regclass AND contype = 'c'")
+          }.from(1).to(0)
+            .and change {
+              # Verify the column is now not nullable
+              ActiveRecord::Base.connection.columns(:test_notnull).find { |c| c.name == "column_with_constraint" }.null
+            }.from(true).to(false)
         end
 
-        it "does not raise error if previous invocation failed and targeting different column" do
+        it "validates an existing unvalidated constraint with matching definition instead of creating a new one" do
+          # First, set up a table with a column
           setup_migration = Class.new(migration_klass) do
             def up
-              unsafe_create_table :foos do |t|
-                t.text :bar
-                t.text :baz
+              safe_create_table(:test_notnull) do |t|
+                t.string :column_with_constraint
               end
-              safe_make_column_not_nullable :foos, :bar
             end
           end
-
-          allow(ActiveRecord::Base.connection).to receive(:execute).and_wrap_original do |m, *args|
-            m.call(*args) unless args.first =~ /DROP CONSTRAINT "tmp_not_null_constraint_fcde2b2"/
-          end
-
           setup_migration.suppress_messages { setup_migration.migrate(:up) }
 
-          migration = Class.new(migration_klass) do
+          # Add an UNVALIDATED constraint that matches what safe_make_column_not_nullable would create
+          constraint_setup = Class.new(migration_klass) do
             def up
-              safe_make_column_not_nullable :foos, :baz
+              safe_add_unvalidated_check_constraint(:test_notnull, "column_with_constraint IS NOT NULL", name: "existing_not_null_check")
+            end
+          end
+          constraint_setup.suppress_messages { constraint_setup.migrate(:up) }
+
+          # Set up spies to ensure methods are called correctly
+          migration = Class.new(migration_klass).new
+          expect(migration).to receive(:unsafe_make_column_not_nullable).with(:test_notnull, :column_with_constraint).and_call_original
+          expect(migration).to receive(:unsafe_remove_constraint).with(:test_notnull, name: "existing_not_null_check").and_call_original
+          expect(migration).to receive(:safe_validate_check_constraint).with(:test_notnull, name: "existing_not_null_check").and_call_original
+          expect(migration).not_to receive(:safe_add_unvalidated_check_constraint)
+
+          # Call the method that should use the existing constraint
+          expect do
+            migration.suppress_messages do
+              migration.safe_make_column_not_nullable(:test_notnull, :column_with_constraint)
+            end
+          end.to change {
+            # Verify the constraint was dropped
+            ActiveRecord::Base.connection.select_value("SELECT COUNT(*) FROM pg_constraint WHERE conrelid = 'test_notnull'::regclass AND contype = 'c'")
+          }.from(1).to(0)
+            .and change {
+              # Verify the column is now not nullable
+              ActiveRecord::Base.connection.columns(:test_notnull).find { |c| c.name == "column_with_constraint" }.null
+            }.from(true).to(false)
+        end
+
+        describe "doesn't use an existing CHECK constraint that does not enforce non-null values" do
+          let(:migration) { Class.new(ActiveRecord::Migration::Current).new }
+
+          before(:each) do
+            migration.suppress_messages do
+              migration.unsafe_create_table :foos do |t|
+                t.integer :column_to_check
+              end
             end
           end
 
-          expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "baz" }.null).to eq(true)
+          it "with an entirely different condition" do
+            migration.suppress_messages do
+              migration.safe_add_unvalidated_check_constraint(:foos , "column_to_check > 0", name: :check_positive)
+              migration.safe_validate_check_constraint(:foos, name: :check_positive)
+            end
 
-          migration.suppress_messages { migration.migrate(:up) }
+            expect(migration).to receive(:safe_add_unvalidated_check_constraint)
+              .with(:foos, '"column_to_check" IS NOT NULL', name: match(/\Atmp_not_null_constraint_/))
+              .and_call_original
+            migration.suppress_messages do
+              migration.safe_make_column_not_nullable(:foos, :column_to_check)
+            end
+          end
 
-          expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "baz" }.null).to eq(false)
+          it "with a prefixed condition" do
+            migration.suppress_messages do
+              migration.safe_add_column :foos, :other_column, :integer
+              migration.safe_add_unvalidated_check_constraint(:foos, "column_to_check IS NOT NULL OR other_column IS NOT NULL", name: :check_a_or_b_not_null)
+              migration.safe_validate_check_constraint(:foos, name: :check_a_or_b_not_null)
+            end
 
-          expect(ActiveRecord::Base.connection.select_values("SELECT conname FROM pg_constraint WHERE conname like 'tmp%'"))
-            .to contain_exactly("tmp_not_null_constraint_fcde2b2")
+            expect(migration).to receive(:safe_add_unvalidated_check_constraint)
+              .with(:foos, '"column_to_check" IS NOT NULL', name: match(/\Atmp_not_null_constraint_/))
+              .and_call_original
+            migration.suppress_messages do
+              migration.safe_make_column_not_nullable(:foos, :column_to_check)
+            end
+          end
+
+          it "with a suffixed condition" do
+            migration.suppress_messages do
+              migration.safe_add_column :foos, :other_column, :integer
+              migration.safe_add_unvalidated_check_constraint(:foos, "other_column IS NOT NULL OR column_to_check IS NOT NULL", name: :check_a_or_b_not_null)
+              migration.safe_validate_check_constraint(:foos, name: :check_a_or_b_not_null)
+            end
+
+            expect(migration).to receive(:safe_add_unvalidated_check_constraint)
+              .with(:foos, '"column_to_check" IS NOT NULL', name: match(/\Atmp_not_null_constraint_/))
+              .and_call_original
+            migration.suppress_messages do
+              migration.safe_make_column_not_nullable(:foos, :column_to_check)
+            end
+          end
         end
       end
 
