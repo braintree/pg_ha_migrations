@@ -34,9 +34,9 @@ RSpec.describe PgHaMigrations::SafeStatements, "lock acquisition" do
         ActiveRecord::Base.connection.execute(<<~SQL)
           CREATE TABLE #{table_name}(pk SERIAL, i INTEGER);
           CREATE TABLE #{table_name}_2(pk SERIAL, i INTEGER);
-          CREATE SCHEMA partman;
-          CREATE EXTENSION pg_partman SCHEMA partman;
         SQL
+
+        TestHelpers.install_partman(schema: "partman")
       end
 
       after(:each) do

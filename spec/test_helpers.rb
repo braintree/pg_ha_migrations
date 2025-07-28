@@ -65,7 +65,7 @@ module TestHelpers
           safe_partman_create_parent(
             table,
             partition_key: :created_at,
-            interval: "weekly",
+            interval: TestHelpers.partition_interval("weekly"),
             template_table: template_table
           )
         end
@@ -73,6 +73,36 @@ module TestHelpers
     end
 
     migration.suppress_messages { migration.migrate(:up) }
+  end
+
+  def self.install_partman(schema: "public")
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      CREATE SCHEMA IF NOT EXISTS #{schema};
+      CREATE EXTENSION pg_partman SCHEMA #{schema};
+    SQL
+  end
+
+  def self.partition_interval(interval)
+    partman_extension = PgHaMigrations::Extension.new("pg_partman")
+
+    return interval unless partman_extension.installed?
+    return interval if partman_extension.major_version < 5
+
+    case interval
+    when "weekly"
+      "1 week"
+    when "monthly"
+      "1 month"
+    else
+      interval
+    end
+  end
+
+  def self.part_config(parent_table)
+    PgHaMigrations::PartmanConfig.find(
+      parent_table,
+      partman_extension: PgHaMigrations::Extension.new("pg_partman")
+    )
   end
 
   def self.enum_names_and_values

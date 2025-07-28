@@ -2,10 +2,13 @@
 class PgHaMigrations::PartmanConfig < ActiveRecord::Base
   self.primary_key = :parent_table
 
-  # This method is called by unsafe_partman_update_config to set the fully
-  # qualified table name, as partman is often installed in a schema that
-  # is not included the application's search path
-  def self.schema=(schema)
-    self.table_name = "#{schema}.part_config"
+  def self.find(parent_table, partman_extension:)
+    unless partman_extension.installed?
+      raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed"
+    end
+
+    self.table_name = "#{partman_extension.quoted_schema}.part_config"
+
+    super(parent_table)
   end
 end

@@ -196,16 +196,16 @@ module PgHaMigrations::UnsafeStatements
 
     raise ArgumentError, "Unrecognized argument(s): #{invalid_options}" unless invalid_options.empty?
 
-    PgHaMigrations::PartmanConfig.schema = _quoted_partman_schema
+    part_config = PgHaMigrations::PartmanTable
+      .from_table_name(table)
+      .part_config(partman_extension: partman_extension)
 
-    config = PgHaMigrations::PartmanConfig.find(_fully_qualified_table_name_for_partman(table))
+    part_config.assign_attributes(**options)
 
-    config.assign_attributes(**options)
-
-    inherit_privileges_changed = config.inherit_privileges_changed?
+    inherit_privileges_changed = part_config.inherit_privileges_changed?
 
     say_with_time "partman_update_config(#{table.inspect}, #{options.map { |k,v| "#{k}: #{v.inspect}" }.join(", ")})" do
-      config.save!
+      part_config.save!
     end
 
     safe_partman_reapply_privileges(table) if inherit_privileges_changed

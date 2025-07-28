@@ -69,9 +69,16 @@ module PgHaMigrations
   # Some methods need to inspect the attributes of a table. In such cases,
   # this error will be raised if the table does not exist
   UndefinedTableError = Class.new(StandardError)
+
+  # Some methods rely on certain extensions being installed (e.g. partman).
+  MissingExtensionError = Class.new(StandardError)
+
+  # Some methods require table / schema names to be in a specific format.
+  InvalidIdentifierError = Class.new(StandardError)
 end
 
 require "pg_ha_migrations/constraint"
+require "pg_ha_migrations/extension"
 require "pg_ha_migrations/relation"
 require "pg_ha_migrations/blocking_database_transactions"
 require "pg_ha_migrations/blocking_database_transactions_reporter"
