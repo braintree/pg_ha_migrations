@@ -551,6 +551,36 @@ module PgHaMigrations::SafeStatements
     end
   end
 
+  def safe_partman_prep(table)
+    raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless PgHaMigrations.partman.installed?
+
+    validated_table = PgHaMigrations::PartmanTable.from_table_name(table)
+
+    part_config = validated_table.part_config
+
+    raise "boom" unless part_config.partition_interval == "P7D"
+    raise "boom" unless [nil, "native"].include?(part_config.partition_type)
+
+    part_config.update!(automatic_maintenance: "off")
+
+    begin
+      sql_queries = validated_table.partitions.map do |partition|
+        next if partition.name =~ /_default$/
+
+        new_name = partition.name[0...-7] + DateTime.strptime(partition.name.last(7), "%Gw%V").strftime("%Y%m%d")
+
+        "ALTER TABLE #{partition.fully_qualified_name} RENAME TO #{new_name};"
+      end.compact
+
+      safely_acquire_lock_for_table(table) do
+        connection.execute(sql_queries.join("\n"))
+        part_config.update!(sdatetime_string: "YYYYMMDD")
+      end
+    ensure
+      part_config.update!(automatic_maintenance: "on")
+    end
+  end
+
   def _per_migration_caller
     @_per_migration_caller ||= Kernel.caller
   end
