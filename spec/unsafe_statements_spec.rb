@@ -1344,7 +1344,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             expect do
               migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(ActiveRecord::RecordNotFound, "Couldn't find PgHaMigrations::PartmanConfig with 'parent_table'=public.foos3")
+            end.to raise_error(ActiveRecord::RecordNotFound, /Couldn't find PgHaMigrations::PartmanConfig with 'parent_table'="?public\.foos3"?/)
           end
 
           it "raises error when unsupported arg is supplied" do
