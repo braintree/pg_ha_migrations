@@ -2619,13 +2619,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
       describe "#safe_partman_create_parent" do
         let(:partman_extension) { PgHaMigrations::Extension.new("pg_partman") }
-        let(:partition_type_attr) do
-          if partman_extension.major_version < 5
-            {partition_type: "native"}
-          else
-            {}
-          end
-        end
+        let(:partition_type) { partman_extension.major_version < 5 ? "native" : "range" }
 
         describe "when extension not installed" do
           it "raises error" do
@@ -2666,9 +2660,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             part_config = TestHelpers.part_config("public.foos3")
 
-            attributes = partition_type_attr.merge(
+            expect(part_config).to have_attributes(
               control: "created_at",
               partition_interval: "P1M",
+              partition_type: partition_type,
               premake: 4,
               template_table: "public.template_public_foos3",
               infinite_time_partitions: true,
@@ -2676,8 +2671,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
               retention: nil,
               retention_keep_table: true,
             )
-
-            expect(part_config).to have_attributes(attributes)
           end
         end
 
@@ -2704,9 +2697,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             part_config = TestHelpers.part_config("public.foos3")
 
-            attributes = partition_type_attr.merge(
+            expect(part_config).to have_attributes(
               control: "created_at",
               partition_interval: "P1M",
+              partition_type: partition_type,
               premake: 4,
               template_table: "partman.template_public_foos3",
               infinite_time_partitions: true,
@@ -2714,8 +2708,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
               retention: nil,
               retention_keep_table: true,
             )
-
-            expect(part_config).to have_attributes(attributes)
           end
 
           it "creates child partitions with custom options" do
@@ -2765,9 +2757,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             part_config = TestHelpers.part_config("public.foos3")
 
-            attributes = partition_type_attr.merge(
+            expect(part_config).to have_attributes(
               control: "created_at",
               partition_interval: "P7D",
+              partition_type: partition_type,
               premake: 1,
               template_table: "public.foos3_template",
               infinite_time_partitions: false,
@@ -2775,8 +2768,6 @@ RSpec.describe PgHaMigrations::SafeStatements do
               retention: "60 days",
               retention_keep_table: false,
             )
-
-            expect(part_config).to have_attributes(attributes)
           end
 
           it "uses parent table listed first in the search path when multiple present" do
