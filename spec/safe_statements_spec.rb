@@ -3120,6 +3120,28 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
       end
+
+      describe "#safe_partman_standardize_partition_naming" do
+        describe "when extension not installed" do
+          it "raises error" do
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_reapply_privileges :foos3
+              end
+            end
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed")
+          end
+        end
+
+        describe "when extension installed" do
+          before do
+            TestHelpers.install_partman
+          end
+        end
+      end
     end
   end
 end

@@ -551,7 +551,7 @@ module PgHaMigrations::SafeStatements
     end
   end
 
-  def safe_partman_prep(table)
+  def safe_partman_standardize_partition_naming(table, target_version: 5)
     raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless partman_extension.installed?
 
     validated_table = PgHaMigrations::PartmanTable.from_table_name(table)
@@ -559,7 +559,7 @@ module PgHaMigrations::SafeStatements
     part_config = validated_table.part_config(partman_extension: partman_extension)
 
     raise "boom" unless part_config.partition_interval == "P7D"
-    raise "boom" unless [nil, "native"].include?(part_config.partition_type)
+    raise "boom" unless [nil, "native"].include?(part_config.partition_type) # is this actually right for partman 5?
 
     part_config.update!(automatic_maintenance: "off")
 
