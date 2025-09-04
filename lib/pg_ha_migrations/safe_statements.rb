@@ -552,11 +552,11 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_partman_prep(table)
-    raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless PgHaMigrations.partman.installed?
+    raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless partman_extension.installed?
 
     validated_table = PgHaMigrations::PartmanTable.from_table_name(table)
 
-    part_config = validated_table.part_config
+    part_config = validated_table.part_config(partman_extension: partman_extension)
 
     raise "boom" unless part_config.partition_interval == "P7D"
     raise "boom" unless [nil, "native"].include?(part_config.partition_type)
@@ -574,7 +574,7 @@ module PgHaMigrations::SafeStatements
 
       safely_acquire_lock_for_table(table) do
         connection.execute(sql_queries.join("\n"))
-        part_config.update!(sdatetime_string: "YYYYMMDD")
+        part_config.update!(datetime_string: "YYYYMMDD")
       end
     ensure
       part_config.update!(automatic_maintenance: "on")
