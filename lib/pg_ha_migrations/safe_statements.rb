@@ -557,27 +557,27 @@ module PgHaMigrations::SafeStatements
     validated_table = PgHaMigrations::PartmanTable.from_table_name(table)
 
     part_config = validated_table.part_config(partman_extension: partman_extension)
+    partition_rename_provider = part_config.partition_rename_provider
 
-    raise "boom" unless part_config.partition_interval == "P7D"
     raise "boom" unless [nil, "native"].include?(part_config.partition_type) # is this actually right for partman 5?
 
-    part_config.update!(automatic_maintenance: "off")
+    before_automatic_maintenance = part_config.automatic_maintenance
+
+    part_config.update!(automatic_maintenance: "off") if before_automatic_maintenance == "on"
 
     begin
       sql_queries = validated_table.partitions.map do |partition|
         next if partition.name =~ /_default$/
 
-        new_name = partition.name[0...-7] + DateTime.strptime(partition.name.last(7), "%Gw%V").strftime("%Y%m%d")
-
-        "ALTER TABLE #{partition.fully_qualified_name} RENAME TO #{new_name};"
+        partition_rename_provider.get_sql(partition)
       end.compact
 
       safely_acquire_lock_for_table(table) do
         connection.execute(sql_queries.join("\n"))
-        part_config.update!(datetime_string: "YYYYMMDD")
+        part_config.update!(datetime_string: partition_rename_provider.new_datetime_string)
       end
     ensure
-      part_config.update!(automatic_maintenance: "on")
+      part_config.update!(automatic_maintenance: "on") if before_automatic_maintenance == "on"
     end
   end
 

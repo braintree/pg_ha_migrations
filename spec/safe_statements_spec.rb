@@ -3126,7 +3126,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error" do
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_reapply_privileges :foos3
+                safe_partman_standardize_partition_naming :foos3
               end
             end
 
@@ -3139,6 +3139,138 @@ RSpec.describe PgHaMigrations::SafeStatements do
         describe "when extension installed" do
           before do
             TestHelpers.install_partman
+          end
+
+          it "renames weekly tables" do
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_standardize_partition_naming :foos3
+              end
+            end
+
+            before_part_config = TestHelpers.part_config("public.foos3")
+
+            expect(before_part_config).to have_attributes(
+              partition_interval: "P7D",
+              datetime_string: "IYYY\"w\"IW",
+              partition_type: "native",
+              automatic_maintenance: "on",
+            )
+
+            expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true)).to all(match(/^foos3_p\d{4}w\d{2}$/))
+
+            allow(ActiveRecord::Base.connection).to receive(:exec_update).and_call_original
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            expect(ActiveRecord::Base.connection).to receive(:exec_update).with(
+              /UPDATE "public"."part_config" SET "automatic_maintenance"/,
+              anything,
+              [having_attributes(value: "off"), having_attributes(value: "public.foos3")],
+            ).once.ordered
+
+            expect(ActiveRecord::Base.connection).to receive(:execute)
+              .with(/LOCK "public"\."foos3" IN ACCESS EXCLUSIVE MODE/)
+              .once.ordered
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            after_part_config = TestHelpers.part_config("public.foos3")
+
+            expect(after_part_config).to have_attributes(
+              partition_interval: "P7D",
+              datetime_string: "YYYYMMDD",
+              partition_type: "native",
+              automatic_maintenance: "on",
+            )
+
+            expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true)).to all(match(/^foos3_p\d{8}$/))
+          end
+
+          it "renames quarterly tables" do
+
+            # Test handling of quarterly interval
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true,
+                                                      interval: "quarterly")
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_standardize_partition_naming :foos3
+              end
+            end
+
+            before_part_config = TestHelpers.part_config("public.foos3")
+
+            expect(before_part_config).to have_attributes(
+              partition_interval: "P3M",
+              datetime_string: "YYYY\"q\"Q",
+              partition_type: "native",
+              automatic_maintenance: "on",
+            )
+
+            expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true)).to all(match(/^foos3_p\d{4}q\d{1}$/))
+
+            allow(ActiveRecord::Base.connection).to receive(:exec_update).and_call_original
+            allow(ActiveRecord::Base.connection).to receive(:execute).and_call_original
+
+            expect(ActiveRecord::Base.connection).to receive(:exec_update).with(
+              /UPDATE "public"."part_config" SET "automatic_maintenance"/,
+              anything,
+              [having_attributes(value: "off"), having_attributes(value: "public.foos3")],
+            ).once.ordered
+
+            expect(ActiveRecord::Base.connection).to receive(:execute)
+              .with(/LOCK "public"\."foos3" IN ACCESS EXCLUSIVE MODE/)
+              .once.ordered
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            after_part_config = TestHelpers.part_config("public.foos3")
+
+            expect(after_part_config).to have_attributes(
+              partition_interval: "P3M",
+              datetime_string: "YYYYMMDD",
+              partition_type: "native",
+              automatic_maintenance: "on",
+            )
+
+            expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true)).to all(match(/^foos3_p\d{4}(01|04|07|10)01$/))
+
+          end
+
+          describe "RenameWeeklyPartitionSqlProvider" do
+            it "Raises same errors as base (abstract) class. super() called." do
+
+            end
+            it "'get_sql' raises error when partition missing" do
+
+            end
+            it "'get_sql' returns correct SQL for expected partition name format" do
+              require 'ostruct'
+              # Construct mock 'part_config'
+              # Assign interval code, 'P7D', weekly.
+              # part_config = PartitionConfig.new
+              # part_config = OpenStruct.new (partition_interval: "P7D")
+              # Construct mock partition
+              # Assign name and fully_qualified_name
+              # sql_provider = RenameWeeklyPartitionSqlProvider.new(part_config)
+              # alter_sql = sql_provider.get_sql(partition)
+              # Verify that SQL is correct, sans whitespace
+            end
+            it "Returns nil if named is already changed" do
+
+            end
+            it "Raises error if the suffix is not in an expected format" do
+
+            end
+            it "Reports error for bad input (year, month, day, name qualified, .." do
+
+            end
+          end
+
+          describe "RenameQuarterlyPartitionSqlProvider" do
+            # Basically the same tests as above except for quarterly
           end
         end
       end

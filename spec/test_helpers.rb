@@ -19,8 +19,8 @@ module TestHelpers
     SQL
   end
 
-  def self.partitions_for_table(table, schema: "public")
-    ActiveRecord::Base.connection.select_values(<<~SQL)
+  def self.partitions_for_table(table, schema: "public", exclude_default: false)
+    partitions = ActiveRecord::Base.connection.select_values(<<~SQL)
       SELECT child.relname
       FROM pg_inherits
         JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
@@ -29,6 +29,10 @@ module TestHelpers
       WHERE parent.relname = '#{table}'
         AND pg_namespace.nspname = '#{schema}'
     SQL
+
+    partitions.delete_if { |partition| partition =~ /_default$/ } if exclude_default
+
+    partitions
   end
 
   def self.grantees_for_table(table)
@@ -39,11 +43,18 @@ module TestHelpers
     SQL
   end
 
-  def self.create_range_partitioned_table(table, migration_klass, with_template: false, with_partman: false)
+  def self.create_range_partitioned_table(
+    table,
+    migration_klass,
+    with_template: false,
+    with_partman: false,
+    interval: "weekly"
+  )
     migration = Class.new(migration_klass) do
-      class_attribute :table, :with_template, :with_partman, instance_accessor: true
+      class_attribute :table, :with_template, :with_partman, :interval, instance_accessor: true
 
       self.table = table
+      self.interval = interval
       self.with_template = with_template
       self.with_partman = with_partman
 
@@ -65,7 +76,7 @@ module TestHelpers
           safe_partman_create_parent(
             table,
             partition_key: :created_at,
-            interval: TestHelpers.partition_interval("weekly"),
+            interval: TestHelpers.partition_interval(interval),
             template_table: template_table
           )
         end

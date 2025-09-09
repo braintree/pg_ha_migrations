@@ -11,4 +11,15 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
 
     super(parent_table)
   end
+
+  def partition_rename_provider
+    case partition_interval
+    when "P7D"
+      PgHaMigrations::RenameWeeklyPartitionSqlProvider.new(self)
+    when "P3M"
+      PgHaMigrations::RenameQuarterlyPartitionSqlProvider.new(self)
+    else
+      raise "unsupported interval"
+    end
+  end
 end
