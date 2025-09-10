@@ -3,6 +3,10 @@ module PgHaMigrations::SafeStatements
     @safe_added_columns_without_default_value ||= []
   end
 
+  def partman_extension
+    @partman_extension ||= PgHaMigrations::Extension.new("pg_partman")
+  end
+
   def safe_create_table(table, **options, &block)
     if options[:force]
       raise PgHaMigrations::UnsafeMigrationError.new(":force is NOT SAFE! Explicitly call unsafe_drop_table first if you want to recreate an existing table")
@@ -474,6 +478,8 @@ module PgHaMigrations::SafeStatements
       raise PgHaMigrations::InvalidMigrationError, "Native partitioning with partman not supported on Postgres databases before version 11"
     end
 
+    raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless partman_extension.installed?
+
     formatted_start_partition = nil
 
     if start_partition.present?
@@ -488,15 +494,21 @@ module PgHaMigrations::SafeStatements
       end
     end
 
+    validated_table = PgHaMigrations::PartmanTable.from_table_name(table)
+    validated_template_table = template_table ? PgHaMigrations::PartmanTable.from_table_name(template_table) : nil
+
     create_parent_options = {
-      parent_table: _fully_qualified_table_name_for_partman(table),
-      template_table: template_table ? _fully_qualified_table_name_for_partman(template_table) : nil,
+      parent_table: validated_table.fully_qualified_name,
+      template_table: validated_template_table&.fully_qualified_name,
       control: partition_key,
-      type: "native",
       interval: interval,
       premake: premake,
       start_partition: formatted_start_partition,
     }.compact
+
+    if partman_extension.major_version < 5
+      create_parent_options[:type] = "native"
+    end
 
     create_parent_sql = create_parent_options.map { |k, v| "p_#{k} := #{connection.quote(v)}" }.join(", ")
 
@@ -508,7 +520,7 @@ module PgHaMigrations::SafeStatements
       "template_table: #{template_table.inspect})"
 
     say_with_time(log_message) do
-      connection.execute("SELECT #{_quoted_partman_schema}.create_parent(#{create_parent_sql})")
+      connection.execute("SELECT #{partman_extension.quoted_schema}.create_parent(#{create_parent_sql})")
     end
 
     update_config_options = {
@@ -530,32 +542,13 @@ module PgHaMigrations::SafeStatements
   end
 
   def safe_partman_reapply_privileges(table)
+    raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless partman_extension.installed?
+
+    validated_table = PgHaMigrations::PartmanTable.from_table_name(table)
+
     say_with_time "partman_reapply_privileges(#{table.inspect})" do
-      connection.execute("SELECT #{_quoted_partman_schema}.reapply_privileges('#{_fully_qualified_table_name_for_partman(table)}')")
+      connection.execute("SELECT #{partman_extension.quoted_schema}.reapply_privileges('#{validated_table.fully_qualified_name}')")
     end
-  end
-
-  def _quoted_partman_schema
-    schema = connection.select_value(<<~SQL)
-      SELECT nspname
-      FROM pg_namespace JOIN pg_extension
-        ON pg_namespace.oid = pg_extension.extnamespace
-      WHERE pg_extension.extname = 'pg_partman'
-    SQL
-
-    raise PgHaMigrations::InvalidMigrationError, "The pg_partman extension is not installed" unless schema.present?
-
-    connection.quote_schema_name(schema)
-  end
-
-  def _fully_qualified_table_name_for_partman(table)
-    table = PgHaMigrations::Table.from_table_name(table)
-
-    [table.schema, table.name].each do |identifier|
-      if identifier.to_s !~ /^[a-z_][a-z_\d]*$/
-        raise PgHaMigrations::InvalidMigrationError, "Partman requires schema / table names to be lowercase with underscores"
-      end
-    end.join(".")
   end
 
   def _per_migration_caller

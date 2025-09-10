@@ -139,6 +139,30 @@ module PgHaMigrations
     end
   end
 
+  class PartmanTable < Table
+    IDENTIFIER_REGEX = /^[a-z_][a-z_\d]*$/
+
+    def initialize(name, schema, mode=nil)
+      if name !~ IDENTIFIER_REGEX
+        raise InvalidIdentifierError, "Partman requires table names to be lowercase with underscores"
+      end
+
+      if schema !~ IDENTIFIER_REGEX
+        raise InvalidIdentifierError, "Partman requires schema names to be lowercase with underscores"
+      end
+
+      super
+    end
+
+    def fully_qualified_name
+      "#{schema}.#{name}"
+    end
+
+    def part_config(partman_extension:)
+      PgHaMigrations::PartmanConfig.find(fully_qualified_name, partman_extension: partman_extension)
+    end
+  end
+
   class Index < Relation
     MAX_NAME_SIZE = 63 # bytes
 

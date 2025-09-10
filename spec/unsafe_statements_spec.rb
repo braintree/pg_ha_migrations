@@ -1200,6 +1200,8 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
       describe "#unsafe_partman_update_config" do
         describe "when extension not installed" do
           it "raises error" do
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
             migration = Class.new(migration_klass) do
               def up
                 unsafe_partman_update_config :foos3, inherit_privileges: true
@@ -1208,15 +1210,13 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             expect do
               migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(PgHaMigrations::InvalidMigrationError, "The pg_partman extension is not installed")
+            end.to raise_error(PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed")
           end
         end
 
         describe "when extension installed" do
           before do
-            ActiveRecord::Base.connection.execute("CREATE EXTENSION pg_partman")
-
-            PgHaMigrations::PartmanConfig.schema = "public"
+            TestHelpers.install_partman
           end
 
           it "updates values and reapplies privileges when inherit_privileges changes from true to false" do
@@ -1224,7 +1224,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             setup_migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
               end
             end
 
@@ -1246,7 +1246,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+            part_config = TestHelpers.part_config("public.foos3")
 
             expect(part_config).to have_attributes(
               inherit_privileges: false,
@@ -1264,7 +1264,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
               def up
                 safe_partman_create_parent :foos3,
                   partition_key: :created_at,
-                  interval: "monthly",
+                  interval: TestHelpers.partition_interval("monthly"),
                   inherit_privileges: false,
                   infinite_time_partitions: false
               end
@@ -1283,7 +1283,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+            part_config = TestHelpers.part_config("public.foos3")
 
             expect(part_config).to have_attributes(
               inherit_privileges: true,
@@ -1296,7 +1296,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             setup_migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "monthly"
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
               end
             end
 
@@ -1313,7 +1313,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             migration.suppress_messages { migration.migrate(:up) }
 
-            part_config = PgHaMigrations::PartmanConfig.find("public.foos3")
+            part_config = TestHelpers.part_config("public.foos3")
 
             expect(part_config).to have_attributes(
               inherit_privileges: true,
@@ -1344,7 +1344,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             expect do
               migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(ActiveRecord::RecordNotFound, "Couldn't find PgHaMigrations::PartmanConfig with 'parent_table'=public.foos3")
+            end.to raise_error(ActiveRecord::RecordNotFound, /Couldn't find PgHaMigrations::PartmanConfig with 'parent_table'="?public\.foos3"?/)
           end
 
           it "raises error when unsupported arg is supplied" do
