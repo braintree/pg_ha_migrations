@@ -559,7 +559,7 @@ module PgHaMigrations::SafeStatements
     part_config = validated_table.part_config(partman_extension: partman_extension)
     partition_rename_provider = part_config.partition_rename_provider
 
-    raise "boom" unless [nil, "native"].include?(part_config.partition_type) # is this actually right for partman 5?
+    raise "boom" unless part_config.supported_partition_type?
 
     before_automatic_maintenance = part_config.automatic_maintenance
 

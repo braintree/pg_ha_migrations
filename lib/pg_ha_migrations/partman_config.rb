@@ -12,6 +12,10 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
     super(parent_table)
   end
 
+  def supported_partition_type?
+    %w[native range].include?(partition_type)
+  end
+
   def partition_rename_provider
     case partition_interval
     when "P7D"

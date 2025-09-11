@@ -3185,7 +3185,49 @@ RSpec.describe PgHaMigrations::SafeStatements do
               automatic_maintenance: "on",
             )
 
-            expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true)).to all(match(/^foos3_p\d{8}$/))
+            child_tables = TestHelpers.partitions_for_table(:foos3, exclude_default: true)
+
+            expect(child_tables).to all(match(/^foos3_p\d{8}$/))
+
+            TestHelpers.part_config("public.foos3").update!(premake: 10)
+
+            # create additional child partitions
+            ActiveRecord::Base.connection.execute("CALL public.run_maintenance_proc()")
+
+            new_child_tables = TestHelpers.partitions_for_table(:foos3, exclude_default: true)
+
+            expect(new_child_tables.size).to be > child_tables.size
+
+            expect(new_child_tables).to all(match(/^foos3_p\d{8}$/))
+          end
+
+          it "raises error when partition name in unexpected format" do
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_standardize_partition_naming :foos3
+              end
+            end
+
+            before_part_config = TestHelpers.part_config("public.foos3")
+
+            before_partition_names = TestHelpers.partitions_for_table(:foos3, exclude_default: true)
+
+            expect(before_partition_names).to all(match(/^foos3_p\d{4}w\d{2}$/))
+
+            trial_partition_name = before_partition_names[2]
+            bad_table_name = "bar_pABCDEFG"
+            rename_sql = "ALTER TABLE #{trial_partition_name} RENAME TO #{bad_table_name}"
+            ActiveRecord::Base.connection.execute rename_sql
+
+            expect{ migration.migrate(:up) }.to raise_error "Bad suffix"
+
+            after_partition_names = TestHelpers.partitions_for_table(:foos3, exclude_default: true)
+            expect (after_partition_names).to include?(bad_table_name)
+            unchanged_partitions = after_partition_names.reject (bad_table_name)
+            expect (unchanged_partitions).to all(match(/^foos3_p\d{4}w\d{2}$/))
+
           end
 
           it "renames quarterly tables" do
