@@ -10,10 +10,6 @@ RSpec.describe PgHaMigrations do
   end
 
   describe "config" do
-    after(:each) do
-      PgHaMigrations.instance_variable_set(:@config, nil)
-    end
-
     describe "disable_default_migration_methods" do
       it "is set to true by default" do
         expect(PgHaMigrations.config.disable_default_migration_methods).to be(true)
@@ -81,6 +77,20 @@ RSpec.describe PgHaMigrations do
         end
 
         expect(PgHaMigrations.config.infer_primary_key_on_partitioned_tables).to be(false)
+      end
+    end
+
+    describe "partman_5_compatibility_mode" do
+      it "is set to false by default" do
+        expect(PgHaMigrations.config.partman_5_compatibility_mode).to be(false)
+      end
+
+      it "can be overriden to true" do
+        PgHaMigrations.configure do |config|
+          config.partman_5_compatibility_mode = true
+        end
+
+        expect(PgHaMigrations.config.partman_5_compatibility_mode).to be(true)
       end
     end
   end

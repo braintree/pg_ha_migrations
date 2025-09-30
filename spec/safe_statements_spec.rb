@@ -2795,6 +2795,79 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to_not raise_error
           end
 
+          it "raises error when keyword interval used and compatibility mode true" do
+            PgHaMigrations.config.partman_5_compatibility_mode = true
+
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "weekly"
+              end
+            end
+
+            error_message = "Special partition interval values (weekly) are no longer supported. " \
+              "Please use a supported interval time value from core PostgreSQL"
+
+            if partman_extension.major_version < 5
+              error_message << " or turn partman 5 compatibility mode off"
+            end
+
+            error_message << " (https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)"
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, error_message)
+          end
+
+          it "raises error when keyword interval used and partman is >= 5 and compatibility mode false" do
+            skip "only valid for partman 5+" if partman_extension.major_version < 5
+
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "hourly"
+              end
+            end
+
+            error_message = "Special partition interval values (hourly) are no longer supported. " \
+              "Please use a supported interval time value from core PostgreSQL " \
+              "(https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)"
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, error_message)
+          end
+
+          it "allows keyword interval when partman is version 4 and compatibility mode false" do
+            skip "only valid for partman 4" unless partman_extension.major_version < 5
+
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "quarterly"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            after_part_config = TestHelpers.part_config("public.foos3")
+
+            aggregate_failures do
+              expect(after_part_config).to have_attributes(
+                partition_interval: "P3M",
+                datetime_string: "YYYY\"q\"Q",
+                partition_type: "native",
+                automatic_maintenance: "on",
+              )
+
+              expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
+                .to all(match(/^foos3_p\d{4}q\d{1}$/))
+            end
+          end
+
           it "raises error when partition key not present" do
             migration = Class.new(migration_klass) do
               def up

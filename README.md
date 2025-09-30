@@ -380,7 +380,7 @@ The rest are keyword args with the following mappings:
 - `premake` -> `p_premake`. Required: `false`. Partman defaults to `4`.
 - `start_partition` -> `p_start_partition`. Required: `false`. Partman defaults to the current timestamp.
 
-> **Note:** We have chosen to require PostgreSQL 11+ and hardcode `p_type` to `native` for simplicity, as previous PostgreSQL versions are end-of-life.
+> **Note:** We have chosen to require PostgreSQL 11+ and hardcode `p_type` to `native` (`range` in the case of Partman 5) for simplicity, as previous PostgreSQL versions are end-of-life.
 
 Additionally, this method allows you to configure a subset of attributes on the record stored in the [part\_config](https://github.com/pgpartman/pg_partman/blob/master/doc/pg_partman.md#tables) table.
 These options are delegated to the `unsafe_partman_update_config` method to update the record:
@@ -589,6 +589,7 @@ end
 - `prefer_single_step_column_addition_with_default`: If true, raise an error when adding a column and separately setting a constant default value for that column in the same migration. Default: `true`
 - `allow_force_create_table`: If false, the `force: true` option to ActiveRecord's `create_table` method is disallowed. Default: `false`
 - `infer_primary_key_on_partitioned_tables`: If true, the primary key for partitioned tables will be inferred on PostgreSQL 11+ databases (identifier column + partition key columns). Default: `true`
+- `partman_5_compatibility_mode`: If true, `safe_partman_create_parent` will raise an error if the user provides an interval that is [not supported by Partman 5](https://github.com/pgpartman/pg_partman/blob/v5.2.4/sql/functions/create_parent.sql#L86-L96). If the interval is supported, the method will ensure table name suffixes match the Partman 5 format (`YYYYMMDD`, `YYYYMMDD_HTH24MISS`). Default: `false`
 
 ### Rake Tasks
 

@@ -23,6 +23,7 @@ RSpec.configure do |config|
   end
 
   config.after(:each) do
+    PgHaMigrations.instance_variable_set(:@config, nil)
     DatabaseHelper.drop_objects
   end
 end

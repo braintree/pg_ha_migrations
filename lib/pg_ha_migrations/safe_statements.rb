@@ -480,6 +480,16 @@ module PgHaMigrations::SafeStatements
 
     raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless partman_extension.installed?
 
+    if partman_extension.major_version >= 5 || PgHaMigrations.config.partman_5_compatibility_mode
+      if PgHaMigrations::PARTMAN_UNSUPPORTED_INTERVALS.include?(interval)
+        raise PgHaMigrations::InvalidMigrationError,
+          "Special partition interval values (#{interval}) are no longer supported. " \
+          "Please use a supported interval time value from core PostgreSQL " \
+          "#{(partman_extension.major_version < 5 ? "or turn partman 5 compatibility mode off " : "")}" \
+          "(https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)"
+      end
+    end
+
     formatted_start_partition = nil
 
     if start_partition.present?
@@ -531,6 +541,10 @@ module PgHaMigrations::SafeStatements
     }.compact
 
     unsafe_partman_update_config(table, **update_config_options)
+
+    if PgHaMigrations.config.partman_5_compatibility_mode && partman_extension.major_version < 5
+      unsafe_partman_standardize_partition_naming(table)
+    end
   end
 
   def safe_partman_update_config(table, **options)
