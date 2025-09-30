@@ -63,6 +63,13 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           target_table_name_pattern: /^foos3_p\d{4}(01|04|07|10)01$/,
           example_bad_table_name: "foos3_p1999q5",
         },
+        "3 months" => {
+          interval_code: "P3M",
+          source_datetime_string: "YYYY_MM",
+          source_name_pattern: /^foos3_p\d{4}_\d{2}$/,
+          target_datetime_string: "YYYYMMDD",
+          target_table_name_pattern: /^foos3_p\d{6}01$/,
+        },
         "monthly" => {
           interval_code: "P1M",
           source_datetime_string: "YYYY_MM",
@@ -81,6 +88,13 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           interval_code: "P7D",
           source_datetime_string: "IYYY\"w\"IW",
           source_name_pattern: /^foos3_p\d{4}w\d{2}$/,
+          target_datetime_string: "YYYYMMDD",
+          target_table_name_pattern: /^foos3_p\d{8}$/,
+        },
+        "1 week" => {
+          interval_code: "P7D",
+          source_datetime_string: "YYYY_MM_DD",
+          source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{8}$/,
         },
@@ -300,8 +314,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
               migration.suppress_messages { migration.migrate(:up) }
             end.to raise_error(
               PgHaMigrations::InvalidPartConfigError,
-              "Expected datetime_string to be #{expectations[:source_datetime_string].inspect} " \
-              "but received \"bad_date\""
+              /Expected datetime_string to be ".+" but received "bad_date"/
             )
 
             after_part_config = TestHelpers.part_config("public.foos3")

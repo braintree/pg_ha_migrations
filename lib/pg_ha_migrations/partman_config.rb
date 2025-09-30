@@ -30,9 +30,14 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
         "Partition renaming for complex partition_interval #{partition_interval.inspect} not supported"
     end
 
-    if partition_interval == "P7D"
+    # Quarterly and weekly have special meaning in Partman 4 with
+    # specific datetime strings that need to be handled separately.
+    #
+    # The intervals "1 week" and "3 months" will not match the first
+    # two conditionals and will fallthrough to standard adapters below.
+    if partition_interval == "P7D" && datetime_string == "IYYY\"w\"IW"
       PgHaMigrations::WeeklyPartmanRenameAdapter.new(self)
-    elsif partition_interval == "P3M"
+    elsif partition_interval == "P3M" && datetime_string == "YYYY\"q\"Q"
       PgHaMigrations::QuarterlyPartmanRenameAdapter.new(self)
     elsif duration >= 1.year
       PgHaMigrations::YearToForeverPartmanRenameAdapter.new(self)
