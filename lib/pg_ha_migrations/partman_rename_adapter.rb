@@ -42,11 +42,7 @@ module PgHaMigrations
 
   class YearToForeverPartmanRenameAdapter < AbstractPartmanRenameAdapter
     def target_table_name(table_name)
-      base_name = table_name[0...-4]
-
-      year = table_name.last(4)
-
-      base_name + year + "0101"
+      table_name + "0101"
     end
 
     def source_datetime_string
@@ -159,29 +155,7 @@ module PgHaMigrations
     end
   end
 
-   class HourToDayPartmanRenameAdapter < AbstractPartmanRenameAdapter
-    def target_table_name(table_name)
-      base_name = table_name[0...-15]
-
-      partition_datetime = DateTime.strptime(table_name.last(15), "%Y_%m_%d_%H%M")
-
-      base_name + partition_datetime.strftime("%Y%m%d_%H%M%S")
-    end
-
-    def source_datetime_string
-      "YYYY_MM_DD_HH24MI"
-    end
-
-    def source_name_suffix_pattern
-      /\A.+_p\d{4}_\d{2}_\d{2}_\d{4}\z/
-    end
-
-    def target_datetime_string
-      "YYYYMMDD_HH24MISS"
-    end
-  end
-
-   class MinuteToHourPartmanRenameAdapter < AbstractPartmanRenameAdapter
+   class MinuteToDayPartmanRenameAdapter < AbstractPartmanRenameAdapter
     def target_table_name(table_name)
       base_name = table_name[0...-15]
 

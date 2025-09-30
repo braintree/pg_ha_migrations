@@ -35,9 +35,9 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
     #
     # The intervals "1 week" and "3 months" will not match the first
     # two conditionals and will fallthrough to standard adapters below.
-    if partition_interval == "P7D" && datetime_string == "IYYY\"w\"IW"
+    if duration == 1.week && datetime_string == "IYYY\"w\"IW"
       PgHaMigrations::WeeklyPartmanRenameAdapter.new(self)
-    elsif partition_interval == "P3M" && datetime_string == "YYYY\"q\"Q"
+    elsif duration == 3.months && datetime_string == "YYYY\"q\"Q"
       PgHaMigrations::QuarterlyPartmanRenameAdapter.new(self)
     elsif duration >= 1.year
       PgHaMigrations::YearToForeverPartmanRenameAdapter.new(self)
@@ -45,10 +45,8 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
       PgHaMigrations::MonthToYearPartmanRenameAdapter.new(self)
     elsif duration >= 1.day && duration < 1.month
       PgHaMigrations::DayToMonthPartmanRenameAdapter.new(self)
-    elsif duration >= 1.hour && duration < 1.day
-      PgHaMigrations::HourToDayPartmanRenameAdapter.new(self)
-    elsif duration >= 1.minute && duration < 1.hour
-      PgHaMigrations::MinuteToHourPartmanRenameAdapter.new(self)
+    elsif duration >= 1.minute && duration < 1.day
+      PgHaMigrations::MinuteToDayPartmanRenameAdapter.new(self)
     elsif duration >= 1.second && duration < 1.minute
       PgHaMigrations::SecondToMinutePartmanRenameAdapter.new(self)
     else
