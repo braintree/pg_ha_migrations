@@ -9,7 +9,7 @@ module PgHaMigrations
     end
 
     def alter_table_sql(partitions)
-      sql = partitions.map do |partition|
+      sql = partitions.filter_map do |partition|
         next if partition.name =~ /\A.+_default\z/
 
         if partition.name !~ source_name_suffix_pattern
@@ -18,7 +18,7 @@ module PgHaMigrations
         end
 
         "ALTER TABLE #{partition.fully_qualified_name} RENAME TO #{target_table_name(partition.name)};"
-      end.compact.join("\n")
+      end.join("\n")
 
       "DO $$ BEGIN #{sql} END; $$;"
     end
