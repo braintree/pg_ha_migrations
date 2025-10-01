@@ -40,6 +40,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{4}0101$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "yearly" => {
           interval_code: "P1Y",
@@ -47,6 +49,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{4}0101$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "6 months" => {
           interval_code: "P6M",
@@ -54,6 +58,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{6}01$/,
+          bad_table_name: "foos3_p1999_13",
+          unexpected_format_error: "date"
         },
         "quarterly" => {
           interval_code: "P3M",
@@ -61,7 +67,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}q\d{1}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{4}(01|04|07|10)01$/,
-          example_bad_table_name: "foos3_p1999q5",
+          bad_table_name: "foos3_p1999q5",
+          unexpected_format_error: "regex"
         },
         "3 months" => {
           interval_code: "P3M",
@@ -69,6 +76,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{6}01$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "monthly" => {
           interval_code: "P1M",
@@ -76,6 +85,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{6}01$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "15 days" => {
           interval_code: "P15D",
@@ -83,6 +94,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{8}$/,
+          bad_table_name: "foos3_p1999_01_46",
+          unexpected_format_error: "date"
         },
         "weekly" => {
           interval_code: "P7D",
@@ -90,6 +103,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}w\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{8}$/,
+          bad_table_name: "foos3_p1999w99",
+          unexpected_format_error: "date"
         },
         "1 week" => {
           interval_code: "P7D",
@@ -97,6 +112,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{8}$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "daily" => {
           interval_code: "P1D",
@@ -104,6 +121,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{8}$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "12 hours" =>  {
           interval_code: "PT12H",
@@ -111,6 +130,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}_\d{4}$/,
           target_datetime_string: "YYYYMMDD_HH24MISS",
           target_table_name_pattern: /^foos3_p\d{8}_\d{6}$/,
+          bad_table_name: "foos3_p1999_01_01_0061",
+          unexpected_format_error: "date"
         },
         "hourly" =>  {
           interval_code: "PT1H",
@@ -118,6 +139,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}_\d{4}$/,
           target_datetime_string: "YYYYMMDD_HH24MISS",
           target_table_name_pattern: /^foos3_p\d{8}_\d{6}$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "half-hour" => {
           interval_code: "PT30M",
@@ -125,6 +148,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}_\d{4}$/,
           target_datetime_string: "YYYYMMDD_HH24MISS",
           target_table_name_pattern: /^foos3_p\d{8}_\d{6}$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "quarter-hour" => {
           interval_code: "PT15M",
@@ -132,6 +157,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}_\d{4}$/,
           target_datetime_string: "YYYYMMDD_HH24MISS",
           target_table_name_pattern: /^foos3_p\d{8}_\d{6}$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "1 minute" => {
           interval_code: "PT1M",
@@ -139,6 +166,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}_\d{4}$/,
           target_datetime_string: "YYYYMMDD_HH24MISS",
           target_table_name_pattern: /^foos3_p\d{8}_\d{6}$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "30 seconds" => {
           interval_code: "PT30S",
@@ -146,6 +175,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}_\d{6}$/,
           target_datetime_string: "YYYYMMDD_HH24MISS",
           target_table_name_pattern: /^foos3_p\d{8}_\d{6}$/,
+          bad_table_name: "foos3_p1999_01_01_000061",
+          unexpected_format_error: "date"
         },
         "1 second" => {
           interval_code: "PT1S",
@@ -153,6 +184,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}_\d{2}_\d{2}_\d{6}$/,
           target_datetime_string: "YYYYMMDD_HH24MISS",
           target_table_name_pattern: /^foos3_p\d{8}_\d{6}$/,
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
       }.each do |interval, expectations|
         context "with #{interval.inspect} interval" do
@@ -253,18 +286,21 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
 
             expect(before_partition_names).to all(match(expectations[:source_name_pattern]))
 
-            bad_table_name = expectations.fetch(:example_bad_table_name, "bar_pabcdefg")
-
             ActiveRecord::Base.connection.execute(<<~SQL)
-              ALTER TABLE #{before_partition_names[2]} RENAME TO #{bad_table_name}
+              ALTER TABLE #{before_partition_names[2]} RENAME TO #{expectations[:bad_table_name]}
             SQL
+
+            error_message = if expectations[:unexpected_format_error] == "regex"
+              /Expected "#{expectations[:bad_table_name]}" to match \/.+\//
+            elsif expectations[:unexpected_format_error] == "date"
+              "Expected \"#{expectations[:bad_table_name]}\" suffix to be a parseable DateTime"
+            else
+              raise "must set :unexpected_format_error key to regex or error in input hash"
+            end
 
             expect do
               migration.suppress_messages { migration.migrate(:up) }
-            end.to raise_error(
-              PgHaMigrations::InvalidIdentifierError,
-              /Expected "#{bad_table_name}" to match \/.+\//
-            )
+            end.to raise_error(PgHaMigrations::InvalidIdentifierError, error_message)
 
             after_part_config = TestHelpers.part_config("public.foos3")
 
@@ -276,9 +312,9 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
             )
 
             after_partition_names = TestHelpers.partitions_for_table(:foos3, exclude_default: true)
-            expect(after_partition_names).to include(bad_table_name)
+            expect(after_partition_names).to include(expectations[:bad_table_name])
 
-            unchanged_partitions = after_partition_names - [bad_table_name]
+            unchanged_partitions = after_partition_names - [expectations[:bad_table_name]]
             expect(unchanged_partitions).to all(match(expectations[:source_name_pattern]))
           end
 

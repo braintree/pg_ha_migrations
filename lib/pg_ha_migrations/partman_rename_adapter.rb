@@ -17,7 +17,12 @@ module PgHaMigrations
             "Expected #{partition.name.inspect} to match #{source_name_suffix_pattern.inspect}"
         end
 
-        "ALTER TABLE #{partition.fully_qualified_name} RENAME TO #{target_table_name(partition.name)};"
+        begin
+          "ALTER TABLE #{partition.fully_qualified_name} RENAME TO #{target_table_name(partition.name)};"
+        rescue Date::Error
+          raise PgHaMigrations::InvalidIdentifierError,
+            "Expected #{partition.name.inspect} suffix to be a parseable DateTime"
+        end
       end.join("\n")
 
       "DO $$ BEGIN #{sql} END; $$;"
