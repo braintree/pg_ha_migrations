@@ -1224,7 +1224,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             setup_migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -1264,7 +1264,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
               def up
                 safe_partman_create_parent :foos3,
                   partition_key: :created_at,
-                  interval: TestHelpers.partition_interval("monthly"),
+                  interval: "1 month",
                   inherit_privileges: false,
                   infinite_time_partitions: false
               end
@@ -1296,7 +1296,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
 
             setup_migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 

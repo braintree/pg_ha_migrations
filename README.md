@@ -397,7 +397,7 @@ safe_create_partitioned_table :table, type: :range, partition_key: :created_at d
   t.timestamps null: false
 end
 
-safe_partman_create_parent :table, partition_key: :created_at, interval: "weekly"
+safe_partman_create_parent :table, partition_key: :created_at, interval: "1 week"
 ```
 
 With custom overrides:
@@ -415,7 +415,7 @@ end
 
 safe_partman_create_parent :table,
   partition_key: :created_at,
-  interval: "weekly",
+  interval: "1 week",
   template_table: :table_template,
   premake: 10,
   start_partition: Time.current + 1.month,
