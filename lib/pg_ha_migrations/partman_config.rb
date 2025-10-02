@@ -2,8 +2,6 @@
 class PgHaMigrations::PartmanConfig < ActiveRecord::Base
   SUPPORTED_PARTITION_TYPES = %w[native range]
 
-  delegate :table_name, to: :class
-
   self.primary_key = :parent_table
 
   def self.find(parent_table, partman_extension:)
@@ -18,7 +16,7 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
 
   def partition_rename_adapter
     unless SUPPORTED_PARTITION_TYPES.include?(partition_type)
-      raise PgHaMigrations::InvalidPartConfigError,
+      raise PgHaMigrations::InvalidPartmanConfigError,
         "Expected partition_type to be in #{SUPPORTED_PARTITION_TYPES.inspect} " \
         "but received #{partition_type.inspect}"
     end
@@ -26,7 +24,7 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
     duration = ActiveSupport::Duration.parse(partition_interval)
 
     if duration.parts.size != 1
-      raise PgHaMigrations::InvalidPartConfigError,
+      raise PgHaMigrations::InvalidPartmanConfigError,
         "Partition renaming for complex partition_interval #{partition_interval.inspect} not supported"
     end
 
@@ -50,7 +48,7 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
     elsif duration >= 1.second && duration < 1.minute
       PgHaMigrations::SecondToMinutePartmanRenameAdapter.new(self)
     else
-      raise PgHaMigrations::InvalidPartConfigError,
+      raise PgHaMigrations::InvalidPartmanConfigError,
         "Expected partition_interval to be greater than 1 second " \
         "but received #{partition_interval.inspect}"
     end

@@ -77,7 +77,7 @@ module PgHaMigrations
   InvalidIdentifierError = Class.new(StandardError)
 
   # Some methods require the part_config entry to be in a specific state.
-  InvalidPartConfigError = Class.new(StandardError)
+  InvalidPartmanConfigError = Class.new(StandardError)
 end
 
 require "pg_ha_migrations/constraint"

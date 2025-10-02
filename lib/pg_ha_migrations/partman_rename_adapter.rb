@@ -2,7 +2,7 @@ module PgHaMigrations
   class AbstractPartmanRenameAdapter
     def initialize(part_config)
       if part_config.datetime_string != source_datetime_string
-        raise PgHaMigrations::InvalidPartConfigError,
+        raise PgHaMigrations::InvalidPartmanConfigError,
           "Expected datetime_string to be #{source_datetime_string.inspect} " \
           "but received #{part_config.datetime_string.inspect}"
       end
@@ -25,6 +25,9 @@ module PgHaMigrations
         end
       end.join("\n")
 
+      # This wraps the SQL in an anonymous function such that
+      # the statement timeout would apply to the entire batch of
+      # statements instead of each individual statement
       "DO $$ BEGIN #{sql} END; $$;"
     end
 

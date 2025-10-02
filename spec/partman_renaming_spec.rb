@@ -4,15 +4,15 @@ require "spec_helper"
 # are slow, and we aren't often modifying those methods, so in local
 # development, we can run this test separately from the rest of the safe
 # statements tests.
-RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
+RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
   let(:migration_klass) { ActiveRecord::Migration::Current }
 
-  describe "#safe_partman_standardize_partition_naming" do
+  describe "#unsafe_partman_standardize_partition_naming" do
     describe "when extension not installed" do
       it "raises error" do
         migration = Class.new(migration_klass) do
           def up
-            safe_partman_standardize_partition_naming :foos3
+            unsafe_partman_standardize_partition_naming :foos3
           end
         end
 
@@ -103,8 +103,8 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
           source_name_pattern: /^foos3_p\d{4}w\d{2}$/,
           target_datetime_string: "YYYYMMDD",
           target_table_name_pattern: /^foos3_p\d{8}$/,
-          bad_table_name: "foos3_p1999w99",
-          unexpected_format_error: "date"
+          bad_table_name: "foos3_pgarbage",
+          unexpected_format_error: "regex"
         },
         "1 week" => {
           interval_code: "P7D",
@@ -199,7 +199,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_standardize_partition_naming :foos3
+                unsafe_partman_standardize_partition_naming :foos3
               end
             end
 
@@ -225,7 +225,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
             ).once.ordered
 
             expect(ActiveRecord::Base.connection).to receive(:execute)
-              .with(/LOCK "public"\."foos3", "public"\."part_config" IN ACCESS EXCLUSIVE MODE/)
+              .with(/LOCK "public"\."foos3" IN ACCESS EXCLUSIVE MODE/)
               .once.ordered
 
             expect do
@@ -269,7 +269,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_standardize_partition_naming :foos3
+                unsafe_partman_standardize_partition_naming :foos3
               end
             end
 
@@ -328,7 +328,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_standardize_partition_naming :foos3
+                unsafe_partman_standardize_partition_naming :foos3
               end
             end
 
@@ -349,7 +349,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
             expect do
               migration.suppress_messages { migration.migrate(:up) }
             end.to raise_error(
-              PgHaMigrations::InvalidPartConfigError,
+              PgHaMigrations::InvalidPartmanConfigError,
               /Expected datetime_string to be ".+" but received "bad_date"/
             )
 
@@ -373,7 +373,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
 
         migration = Class.new(migration_klass) do
           def up
-            safe_partman_standardize_partition_naming :foos3
+            unsafe_partman_standardize_partition_naming :foos3
           end
         end
 
@@ -394,7 +394,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
         expect do
           migration.suppress_messages { migration.migrate(:up) }
         end.to raise_error(
-          PgHaMigrations::InvalidPartConfigError,
+          PgHaMigrations::InvalidPartmanConfigError,
           "Expected partition_type to be in [\"native\", \"range\"] but received \"partman\""
         )
 
@@ -421,7 +421,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
 
         migration = Class.new(migration_klass) do
           def up
-            safe_partman_standardize_partition_naming :foos3
+            unsafe_partman_standardize_partition_naming :foos3
           end
         end
 
@@ -440,7 +440,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
         expect do
           migration.suppress_messages { migration.migrate(:up) }
         end.to raise_error(
-          PgHaMigrations::InvalidPartConfigError,
+          PgHaMigrations::InvalidPartmanConfigError,
           "Partition renaming for complex partition_interval \"P1Y6M\" not supported"
         )
 
@@ -462,7 +462,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
 
         migration = Class.new(migration_klass) do
           def up
-            safe_partman_standardize_partition_naming :foos3
+            unsafe_partman_standardize_partition_naming :foos3
           end
         end
 
@@ -483,7 +483,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
         expect do
           migration.suppress_messages { migration.migrate(:up) }
         end.to raise_error(
-          PgHaMigrations::InvalidPartConfigError,
+          PgHaMigrations::InvalidPartmanConfigError,
           "Expected partition_interval to be greater than 1 second but received \"PT0.5S\""
         )
 
@@ -510,7 +510,7 @@ RSpec.describe PgHaMigrations::SafeStatements, "partman renaming" do
 
         migration = Class.new(migration_klass) do
           def up
-            safe_partman_standardize_partition_naming :foos3, statement_timeout: 0.1
+            unsafe_partman_standardize_partition_naming :foos3, statement_timeout: 0.1
           end
         end
 
