@@ -368,6 +368,54 @@ RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
         end
       end
 
+      it "can parse postgres intervalstyle partition interval" do
+        ActiveRecord::Base.connection.execute("SET intervalstyle TO 'postgres'")
+
+        TestHelpers.create_range_partitioned_table(
+          :foos3,
+          migration_klass,
+          with_partman: true,
+          interval: "1 month",
+        )
+
+        migration = Class.new(migration_klass) do
+          def up
+            unsafe_partman_standardize_partition_naming :foos3
+          end
+        end
+
+        before_part_config = TestHelpers.part_config("public.foos3")
+
+        expect(before_part_config).to have_attributes(
+          partition_interval: "1 mon",
+          datetime_string: "YYYY_MM",
+          partition_type: "native",
+          automatic_maintenance: "on",
+        )
+
+        expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
+          .to all(match(/^foos3_p\d{4}_\d{2}$/))
+
+        migration.suppress_messages { migration.migrate(:up) }
+
+        # Ensure migration preserves existing intervalstyle
+        expect(ActiveRecord::Base.connection.select_value("SHOW intervalstyle")).to eq("postgres")
+
+        after_part_config = TestHelpers.part_config("public.foos3")
+
+        expect(after_part_config).to have_attributes(
+          partition_interval: "1 mon",
+          datetime_string: "YYYYMMDD",
+          partition_type: "native",
+          automatic_maintenance: "on",
+        )
+
+        expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
+          .to all(match(/^foos3_p\d{6}01$/))
+      ensure
+        ActiveRecord::Base.connection.execute("SET intervalstyle TO 'iso_8601'")
+      end
+
       it "raises error when partition type is unexpected" do
         TestHelpers.create_range_partitioned_table(:foos3, migration_klass, with_partman: true)
 

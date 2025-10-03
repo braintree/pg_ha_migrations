@@ -2,6 +2,8 @@
 class PgHaMigrations::PartmanConfig < ActiveRecord::Base
   SUPPORTED_PARTITION_TYPES = %w[native range]
 
+  delegate :connection, to: :class
+
   self.primary_key = :parent_table
 
   def self.find(parent_table, partman_extension:)
@@ -14,6 +16,23 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
     super(parent_table)
   end
 
+  # The actual column type is TEXT and the value is determined by the
+  # intervalstyle in Postgres at the time create_parent is called.
+  # Rails hard codes this config when it builds connections for ease
+  # of parsing by ActiveSupport::Duration.parse. So in theory, we
+  # really only need to do the interval casting, but we're doing the
+  # SET LOCAL to be absolutely sure intervalstyle is correct.
+  #
+  # https://github.com/rails/rails/blob/v8.0.3/activerecord/lib/active_record/connection_adapters/postgresql_adapter.rb#L979-L980
+  def partition_interval_iso_8601
+    transaction do
+      connection.select_value(<<~SQL)
+        SET LOCAL intervalstyle TO 'iso_8601';
+        SELECT #{connection.quote(partition_interval)}::interval;
+      SQL
+    end
+  end
+
   def partition_rename_adapter
     unless SUPPORTED_PARTITION_TYPES.include?(partition_type)
       raise PgHaMigrations::InvalidPartmanConfigError,
@@ -21,11 +40,11 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
         "but received #{partition_type.inspect}"
     end
 
-    duration = ActiveSupport::Duration.parse(partition_interval)
+    duration = ActiveSupport::Duration.parse(partition_interval_iso_8601)
 
     if duration.parts.size != 1
       raise PgHaMigrations::InvalidPartmanConfigError,
-        "Partition renaming for complex partition_interval #{partition_interval.inspect} not supported"
+        "Partition renaming for complex partition_interval #{duration.iso8601.inspect} not supported"
     end
 
     # Quarterly and weekly have special meaning in Partman 4 with
@@ -50,7 +69,7 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
     else
       raise PgHaMigrations::InvalidPartmanConfigError,
         "Expected partition_interval to be greater than 1 second " \
-        "but received #{partition_interval.inspect}"
+        "but received #{duration.iso8601.inspect}"
     end
   end
 end
