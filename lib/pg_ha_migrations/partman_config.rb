@@ -26,10 +26,8 @@ class PgHaMigrations::PartmanConfig < ActiveRecord::Base
   # https://github.com/rails/rails/blob/v8.0.3/activerecord/lib/active_record/connection_adapters/postgresql_adapter.rb#L979-L980
   def partition_interval_iso_8601
     transaction do
-      connection.select_value(<<~SQL)
-        SET LOCAL intervalstyle TO 'iso_8601';
-        SELECT #{connection.quote(partition_interval)}::interval;
-      SQL
+      connection.execute("SET LOCAL intervalstyle TO 'iso_8601'")
+      connection.select_value("SELECT #{connection.quote(partition_interval)}::interval")
     end
   end
 
