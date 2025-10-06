@@ -2820,6 +2820,34 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to raise_error(PgHaMigrations::InvalidMigrationError, error_message)
           end
 
+          it "generates consistent suffixes regardless of partman version when compatibility mode true" do
+            PgHaMigrations.config.partman_5_compatibility_mode = true
+
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 year"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            after_part_config = TestHelpers.part_config("public.foos3")
+
+            aggregate_failures do
+              expect(after_part_config).to have_attributes(
+                partition_interval: "P1Y",
+                datetime_string: "YYYYMMDD",
+                partition_type: partition_type,
+                automatic_maintenance: "on",
+              )
+
+              expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
+                .to all(match(/^foos3_p\d{8}$/))
+            end
+          end
+
           it "raises error when keyword interval used and partman is >= 5 and compatibility mode false" do
             skip "only valid for partman 5+" if partman_extension.major_version < 5
 
