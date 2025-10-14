@@ -2796,7 +2796,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "raises error when keyword interval used and compatibility mode true" do
-            PgHaMigrations.config.partman_5_compatibility_mode = true
+            allow(PgHaMigrations.config)
+              .to receive(:partman_5_compatibility_mode)
+              .and_return(true)
 
             TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
@@ -2821,7 +2823,9 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           it "generates consistent suffixes regardless of partman version when compatibility mode true" do
-            PgHaMigrations.config.partman_5_compatibility_mode = true
+            allow(PgHaMigrations.config)
+              .to receive(:partman_5_compatibility_mode)
+              .and_return(true)
 
             TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
 
