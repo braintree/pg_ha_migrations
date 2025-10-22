@@ -223,9 +223,9 @@ module PgHaMigrations::UnsafeStatements
     before_automatic_maintenance = part_config.automatic_maintenance
 
     part_config.update!(automatic_maintenance: "off") if before_automatic_maintenance == "on"
-    partitions = validated_table.partitions
 
     begin
+      partitions = validated_table.partitions
       alter_table_sql = partition_rename_adapter.alter_table_sql(partitions)
 
       log_message = "partman_standardize_partition_naming(" \
