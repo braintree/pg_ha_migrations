@@ -241,7 +241,7 @@ module PgHaMigrations::UnsafeStatements
         end
       end
     ensure
-      part_config.update!(automatic_maintenance: "on") if before_automatic_maintenance == "on"
+      part_config.reload.update!(automatic_maintenance: "on") if before_automatic_maintenance == "on"
     end
   end
 
