@@ -9,7 +9,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
 
   describe "#unsafe_partman_standardize_partition_naming" do
     describe "when extension not installed" do
-      it "raises error" do
+      it "raises missing extension error" do
         migration = Class.new(migration_klass) do
           def up
             unsafe_partman_standardize_partition_naming :foos3
@@ -22,7 +22,29 @@ RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
       end
     end
 
-    describe "when extension installed" do
+    describe "when extension major version 5+ installed" do
+      let(:partman_extension) { PgHaMigrations::Extension.new("pg_partman") }
+
+      before do
+        TestHelpers.install_partman
+
+        skip "Tests only relevant for partman 5+" unless partman_extension.major_version > 4
+      end
+
+      it "raises invalid migration error" do
+        migration = Class.new(migration_klass) do
+          def up
+            unsafe_partman_standardize_partition_naming :foos3
+          end
+        end
+
+        expect do
+          migration.suppress_messages { migration.migrate(:up) }
+        end.to raise_error(PgHaMigrations::InvalidMigrationError, "This method is only available for pg_partman major version 4")
+      end
+    end
+
+    describe "when extension major version 4 installed" do
       let(:partman_extension) { PgHaMigrations::Extension.new("pg_partman") }
 
       before do
@@ -188,7 +210,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
           unexpected_format_error: "regex"
         },
       }.each do |interval, expectations|
-        context "with #{interval.inspect} interval" do
+        describe "with #{interval.inspect} interval" do
           it "renames tables and maintenance continues to function" do
             TestHelpers.create_range_partitioned_table(
               :foos3,

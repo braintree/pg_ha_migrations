@@ -213,6 +213,7 @@ module PgHaMigrations::UnsafeStatements
 
   def unsafe_partman_standardize_partition_naming(table, statement_timeout: 1)
     raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless partman_extension.installed?
+    raise PgHaMigrations::InvalidMigrationError, "This method is only available for pg_partman major version 4" unless partman_extension.major_version == 4
 
     validated_table = PgHaMigrations::PartmanTable.from_table_name(table)
 
