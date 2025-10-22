@@ -235,8 +235,8 @@ module PgHaMigrations::UnsafeStatements
       safely_acquire_lock_for_table(table) do
         adjust_statement_timeout(statement_timeout) do
           say_with_time(log_message) do
-            connection.execute(alter_table_sql)
             part_config.update!(datetime_string: partition_rename_adapter.target_datetime_string)
+            connection.execute(alter_table_sql)
           end
         end
       end
