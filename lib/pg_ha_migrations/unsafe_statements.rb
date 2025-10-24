@@ -211,6 +211,40 @@ module PgHaMigrations::UnsafeStatements
     safe_partman_reapply_privileges(table) if inherit_privileges_changed
   end
 
+  def unsafe_partman_standardize_partition_naming(table, statement_timeout: 1)
+    raise PgHaMigrations::MissingExtensionError, "The pg_partman extension is not installed" unless partman_extension.installed?
+    raise PgHaMigrations::InvalidMigrationError, "This method is only available for pg_partman major version 4" unless partman_extension.major_version == 4
+
+    validated_table = PgHaMigrations::PartmanTable.from_table_name(table)
+
+    part_config = validated_table.part_config(partman_extension: partman_extension)
+    partition_rename_adapter = part_config.partition_rename_adapter
+
+    before_automatic_maintenance = part_config.automatic_maintenance
+
+    part_config.update!(automatic_maintenance: "off") if before_automatic_maintenance == "on"
+
+    begin
+      partitions = validated_table.partitions
+      alter_table_sql = partition_rename_adapter.alter_table_sql(partitions)
+
+      log_message = "partman_standardize_partition_naming(" \
+        "#{table.inspect}, statement_timeout: #{statement_timeout}) - " \
+        "Renaming #{partitions.size - 1} partition(s)" # excluding default partition
+
+      safely_acquire_lock_for_table(table) do
+        adjust_statement_timeout(statement_timeout) do
+          say_with_time(log_message) do
+            part_config.update!(datetime_string: partition_rename_adapter.target_datetime_string)
+            connection.execute(alter_table_sql)
+          end
+        end
+      end
+    ensure
+      part_config.reload.update!(automatic_maintenance: "on") if before_automatic_maintenance == "on"
+    end
+  end
+
   ruby2_keywords def execute_ancestor_statement(method_name, *args, &block)
     # Dispatching here is a bit complicated: we need to execute the method
     # belonging to the first member of the inheritance chain (besides

@@ -468,6 +468,29 @@ If your partitioned table is configured with `inherit_privileges` set to `true`,
 safe_partman_reapply_privileges :table
 ```
 
+#### unsafe\_partman\_standardize\_partition\_naming
+
+This method provides functionality to standardize existing Partman 4 tables such that naming is consistent with Partman 5.
+The logic follows the guidelines in the [Partman upgrade docs](https://github.com/pgpartman/pg_partman/blob/v5.2.4/doc/pg_partman_5.0.1_upgrade.md).
+
+Technically, only `weekly` and `quarterly` partitioned tables _need_ to be standardized prior to the upgrade.
+_However_, Partman 5 changes the default [datetime_string](https://github.com/pgpartman/pg_partman/blob/v5.2.4/sql/functions/calculate_time_partition_info.sql#L13-L17) that is used for _all_ intervals (`YYYYMMDD` and `YYYYMMDD_HH24MISS`).
+Compare that to the Partman 4 logic for [datetime_string](https://github.com/pgpartman/pg_partman/blob/v4.7.4/sql/functions/create_parent.sql#L434-L459).
+So, this method supports standardization for _all_ Partman 4 intervals.
+
+> **Note:** This method is safe from a database perspective, but is only safe from an application perspective if child tables are not directly referenced (child tables are renamed during this operation)
+
+```ruby
+unsafe_partman_standardize_partition_naming :table
+```
+
+This method uses a default statement timeout of 1 second.
+If the target table has many partitions (hundreds of thousands), you may need to increase the statement timeout for the operation to succeed.
+
+```ruby
+unsafe_partman_standardize_partition_naming :table, statement_timeout: 2
+```
+
 ### Utilities
 
 #### safely\_acquire\_lock\_for\_table

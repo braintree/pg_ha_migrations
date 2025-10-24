@@ -75,6 +75,9 @@ module PgHaMigrations
 
   # Some methods require table / schema names to be in a specific format.
   InvalidIdentifierError = Class.new(StandardError)
+
+  # Some methods require the part_config entry to be in a specific state.
+  InvalidPartmanConfigError = Class.new(StandardError)
 end
 
 require "pg_ha_migrations/constraint"
@@ -83,6 +86,7 @@ require "pg_ha_migrations/relation"
 require "pg_ha_migrations/blocking_database_transactions"
 require "pg_ha_migrations/blocking_database_transactions_reporter"
 require "pg_ha_migrations/partman_config"
+require "pg_ha_migrations/partman_rename_adapter"
 require "pg_ha_migrations/lock_mode"
 require "pg_ha_migrations/unsafe_statements"
 require "pg_ha_migrations/safe_statements"
