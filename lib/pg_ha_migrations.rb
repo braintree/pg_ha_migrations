@@ -14,6 +14,7 @@ module PgHaMigrations
     :allow_force_create_table,
     :prefer_single_step_column_addition_with_default,
     :infer_primary_key_on_partitioned_tables,
+    :partman_5_compatibility_mode,
   )
 
   def self.config
@@ -22,7 +23,8 @@ module PgHaMigrations
       true,
       false,
       true,
-      true
+      true,
+      false,
     )
   end
 
@@ -42,6 +44,17 @@ module PgHaMigrations
     premake
     retention
     retention_keep_table
+  ]
+
+  PARTMAN_UNSUPPORTED_INTERVALS = %w[
+    yearly
+    quarterly
+    monthly
+    weekly
+    daily
+    hourly
+    half-hour
+    quarter-hour
   ]
 
   # Safe versus unsafe in this context specifically means the following:

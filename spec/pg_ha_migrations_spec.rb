@@ -83,6 +83,20 @@ RSpec.describe PgHaMigrations do
         expect(PgHaMigrations.config.infer_primary_key_on_partitioned_tables).to be(false)
       end
     end
+
+    describe "partman_5_compatibility_mode" do
+      it "is set to false by default" do
+        expect(PgHaMigrations.config.partman_5_compatibility_mode).to be(false)
+      end
+
+      it "can be overriden to true" do
+        PgHaMigrations.configure do |config|
+          config.partman_5_compatibility_mode = true
+        end
+
+        expect(PgHaMigrations.config.partman_5_compatibility_mode).to be(true)
+      end
+    end
   end
 
   PgHaMigrations::AllowedVersions::ALLOWED_VERSIONS.each do |migration_klass|

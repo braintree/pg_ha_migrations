@@ -2627,7 +2627,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2647,7 +2647,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2684,7 +2684,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2721,7 +2721,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               def up
                 safe_partman_create_parent "public.foos3",
                   partition_key: :created_at,
-                  interval: TestHelpers.partition_interval("weekly"),
+                  interval: "1 week",
                   template_table: "public.foos3_template",
                   premake: 1,
                   start_partition: current_time,
@@ -2776,7 +2776,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2795,10 +2795,115 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end.to_not raise_error
           end
 
+          it "raises error when keyword interval used and compatibility mode true" do
+            allow(PgHaMigrations.config)
+              .to receive(:partman_5_compatibility_mode)
+              .and_return(true)
+
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "weekly"
+              end
+            end
+
+            error_message = "Special partition interval values (weekly) are no longer supported. " \
+              "Please use a supported interval time value from core PostgreSQL"
+
+            if partman_extension.major_version < 5
+              error_message << " or turn partman 5 compatibility mode off"
+            end
+
+            error_message << " (https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)"
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, error_message)
+          end
+
+          it "generates consistent suffixes regardless of partman version when compatibility mode true" do
+            allow(PgHaMigrations.config)
+              .to receive(:partman_5_compatibility_mode)
+              .and_return(true)
+
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 year"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            after_part_config = TestHelpers.part_config("public.foos3")
+
+            aggregate_failures do
+              expect(after_part_config).to have_attributes(
+                partition_interval: "P1Y",
+                datetime_string: "YYYYMMDD",
+                partition_type: partition_type,
+                automatic_maintenance: "on",
+              )
+
+              expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
+                .to all(match(/^foos3_p\d{8}$/))
+            end
+          end
+
+          it "raises error when keyword interval used and partman is >= 5 and compatibility mode false" do
+            skip "only valid for partman 5+" if partman_extension.major_version < 5
+
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "hourly"
+              end
+            end
+
+            error_message = "Special partition interval values (hourly) are no longer supported. " \
+              "Please use a supported interval time value from core PostgreSQL " \
+              "(https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)"
+
+            expect do
+              migration.suppress_messages { migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::InvalidMigrationError, error_message)
+          end
+
+          it "allows keyword interval when partman is version 4 and compatibility mode false" do
+            skip "only valid for partman 4" unless partman_extension.major_version < 5
+
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+            migration = Class.new(migration_klass) do
+              def up
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "quarterly"
+              end
+            end
+
+            migration.suppress_messages { migration.migrate(:up) }
+
+            after_part_config = TestHelpers.part_config("public.foos3")
+
+            aggregate_failures do
+              expect(after_part_config).to have_attributes(
+                partition_interval: "P3M",
+                datetime_string: "YYYY\"q\"Q",
+                partition_type: "native",
+                automatic_maintenance: "on",
+              )
+
+              expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
+                .to all(match(/^foos3_p\d{4}q\d{1}$/))
+            end
+          end
+
           it "raises error when partition key not present" do
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: nil, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: nil, interval: "1 month"
               end
             end
 
@@ -2822,7 +2927,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error when unsupported optional arg is supplied" do
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly"), foo: "bar"
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month", foo: "bar"
               end
             end
 
@@ -2834,7 +2939,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error when on Postgres < 11" do
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2848,7 +2953,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error when parent table does not exist" do
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2860,7 +2965,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error when parent table does not exist and fully qualified name provided" do
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent "public.foos3", partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent "public.foos3", partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2874,7 +2979,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly"), template_table: :foos3_template
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month", template_table: :foos3_template
               end
             end
 
@@ -2888,7 +2993,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly"), template_table: "public.foos3_template"
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month", template_table: "public.foos3_template"
               end
             end
 
@@ -2911,7 +3016,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2940,7 +3045,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent "foos3'", partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent "foos3'", partition_key: :created_at, interval: "1 month"
               end
             end
 
@@ -2952,7 +3057,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           it "raises error when invalid type used for start partition" do
             migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly"), start_partition: "garbage"
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month", start_partition: "garbage"
               end
             end
 
@@ -3024,7 +3129,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
             setup_migration = Class.new(migration_klass) do
               def up
-                safe_partman_create_parent :foos3, partition_key: :created_at, interval: TestHelpers.partition_interval("monthly")
+                safe_partman_create_parent :foos3, partition_key: :created_at, interval: "1 month"
 
                 unsafe_execute(<<~SQL)
                   CREATE ROLE foo NOLOGIN;

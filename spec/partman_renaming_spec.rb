@@ -453,13 +453,13 @@ RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
 
         expect(before_part_config).to have_attributes(
           partition_interval: "P7D",
-          datetime_string: "IYYY\"w\"IW",
+          datetime_string: "YYYY_MM_DD",
           partition_type: "partman",
           automatic_maintenance: "on",
         )
 
         expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
-          .to all(match(/^foos3_p\d{4}w\d{2}$/))
+          .to all(match(/^foos3_p\d{4}_\d{2}_\d{2}$/))
 
         expect do
           migration.suppress_messages { migration.migrate(:up) }
@@ -472,13 +472,13 @@ RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
 
         expect(after_part_config).to have_attributes(
           partition_interval: "P7D",
-          datetime_string: "IYYY\"w\"IW",
+          datetime_string: "YYYY_MM_DD",
           partition_type: "partman",
           automatic_maintenance: "on",
         )
 
         expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
-          .to all(match(/^foos3_p\d{4}w\d{2}$/))
+          .to all(match(/^foos3_p\d{4}_\d{2}_\d{2}$/))
       end
 
       it "raises error when complex partition interval provided" do
@@ -542,13 +542,13 @@ RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
 
         expect(before_part_config).to have_attributes(
           partition_interval: "PT0.5S",
-          datetime_string: "IYYY\"w\"IW",
+          datetime_string: "YYYY_MM_DD",
           partition_type: "native",
           automatic_maintenance: "on",
         )
 
         expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
-          .to all(match(/^foos3_p\d{4}w\d{2}$/))
+          .to all(match(/^foos3_p\d{4}_\d{2}_\d{2}$/))
 
         expect do
           migration.suppress_messages { migration.migrate(:up) }
@@ -561,13 +561,13 @@ RSpec.describe PgHaMigrations::UnsafeStatements, "partman renaming" do
 
         expect(after_part_config).to have_attributes(
           partition_interval: "PT0.5S",
-          datetime_string: "IYYY\"w\"IW",
+          datetime_string: "YYYY_MM_DD",
           partition_type: "native",
           automatic_maintenance: "on",
         )
 
         expect(TestHelpers.partitions_for_table(:foos3, exclude_default: true))
-          .to all(match(/^foos3_p\d{4}w\d{2}$/))
+          .to all(match(/^foos3_p\d{4}_\d{2}_\d{2}$/))
       end
 
       it "raises error and rolls back transaction when statement timeout exceeded" do

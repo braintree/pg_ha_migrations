@@ -48,7 +48,7 @@ module TestHelpers
     migration_klass,
     with_template: false,
     with_partman: false,
-    interval: "weekly"
+    interval: "1 week"
   )
     migration = Class.new(migration_klass) do
       class_attribute :table, :with_template, :with_partman, :interval, instance_accessor: true
@@ -76,7 +76,7 @@ module TestHelpers
           safe_partman_create_parent(
             table,
             partition_key: :created_at,
-            interval: TestHelpers.partition_interval(interval),
+            interval: interval,
             template_table: template_table
           )
         end
@@ -91,22 +91,6 @@ module TestHelpers
       CREATE SCHEMA IF NOT EXISTS #{schema};
       CREATE EXTENSION pg_partman SCHEMA #{schema};
     SQL
-  end
-
-  def self.partition_interval(interval)
-    partman_extension = PgHaMigrations::Extension.new("pg_partman")
-
-    return interval unless partman_extension.installed?
-    return interval if partman_extension.major_version < 5
-
-    case interval
-    when "weekly"
-      "1 week"
-    when "monthly"
-      "1 month"
-    else
-      interval
-    end
   end
 
   def self.part_config(parent_table)
