@@ -2047,7 +2047,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           constraint_name, constraint_validated, constraint_expression = ActiveRecord::Base.tuple_from_sql <<~SQL
             SELECT conname, convalidated, pg_get_constraintdef(oid)
             FROM pg_constraint
-            WHERE conrelid = 'foos'::regclass AND contype != 'p'
+            WHERE conrelid = 'foos'::regclass AND contype = 'c'
           SQL
 
           expect(constraint_name).to eq("constraint_foo_bar_is_not_null")
@@ -2223,7 +2223,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 ActiveRecord::Base.value_from_sql <<~SQL
                   SELECT conname
                   FROM pg_constraint
-                  WHERE conrelid = 'foos'::regclass AND contype != 'p'
+                  WHERE conrelid = 'foos'::regclass AND contype = 'c'
                 SQL
               end.from("constraint_foo_bar_is_not_null").to("other_comstraint")
             )

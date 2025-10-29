@@ -13,7 +13,7 @@ FROM base AS partman-4-branch
 ENV PARTMAN_VERSION=4.7.4-2.pgdg120+1
 
 FROM base AS partman-5-branch
-ENV PARTMAN_VERSION=5.2.4-1.pgdg120+1
+ENV PARTMAN_VERSION=5.3.1-1.pgdg12+1
 
 FROM partman-$PARTMAN_VERSION-branch AS final
 RUN apt update && apt-get install -y postgresql-$PG_MAJOR-partman=$PARTMAN_VERSION
