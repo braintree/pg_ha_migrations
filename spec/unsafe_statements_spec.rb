@@ -533,7 +533,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
           constraint_name, constraint_validated, constraint_expression = ActiveRecord::Base.tuple_from_sql(<<~SQL)
             SELECT conname, convalidated, pg_get_constraintdef(oid)
             FROM pg_constraint
-            WHERE conrelid = 'foos'::regclass AND contype != 'p'
+            WHERE conrelid = 'foos'::regclass AND contype = 'c'
           SQL
 
           expect(constraint_name).to eq("constraint_foo_bar_is_positive")
@@ -637,7 +637,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
             SELECT EXISTS (
               SELECT 1
               FROM pg_constraint
-              WHERE conrelid = 'foos'::regclass AND contype != 'p'
+              WHERE conrelid = 'foos'::regclass AND contype = 'c'
             )
           SQL
         end
@@ -1166,7 +1166,7 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
                 ActiveRecord::Base.pluck_from_sql <<~SQL
                   SELECT conname
                   FROM pg_constraint
-                  WHERE conrelid = 'foos'::regclass AND contype != 'p'
+                  WHERE conrelid = 'foos'::regclass AND contype = 'c'
                 SQL
               end.from(["constraint_foo_bar_is_not_null"]).to([])
             )
