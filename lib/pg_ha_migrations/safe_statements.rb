@@ -697,7 +697,7 @@ module PgHaMigrations::SafeStatements
 
   def adjust_lock_timeout(timeout_seconds = PgHaMigrations::LOCK_TIMEOUT_SECONDS, &block)
     _check_postgres_adapter!
-    original_timeout = ActiveRecord::Base.value_from_sql("SHOW lock_timeout").sub(/s\Z/, '').to_i * 1000
+    original_timeout = _timeout_to_milliseconds(ActiveRecord::Base.value_from_sql("SHOW lock_timeout"))
     begin
       connection.execute("SET lock_timeout = #{PG::Connection.escape_string((timeout_seconds * 1000).to_s)};")
       block.call
@@ -717,7 +717,7 @@ module PgHaMigrations::SafeStatements
 
   def adjust_statement_timeout(timeout_seconds, &block)
     _check_postgres_adapter!
-    original_timeout = ActiveRecord::Base.value_from_sql("SHOW statement_timeout").sub(/s\Z/, '').to_i * 1000
+    original_timeout = _timeout_to_milliseconds(ActiveRecord::Base.value_from_sql("SHOW statement_timeout"))
     begin
       connection.execute("SET statement_timeout = #{PG::Connection.escape_string((timeout_seconds * 1000).to_s)};")
       block.call
@@ -732,6 +732,29 @@ module PgHaMigrations::SafeStatements
           raise e
         end
       end
+    end
+  end
+
+  # Parses PostgreSQL timeout strings (e.g., "0", "500ms", "5s", "20min", "1h")
+  # and returns the value in milliseconds.
+  def _timeout_to_milliseconds(timeout_string)
+    case timeout_string
+    when /\A(\d+)ms\z/
+      $1.to_i
+    when /\A(\d+)s\z/
+      $1.to_i * 1000
+    when /\A(\d+)min\z/
+      $1.to_i * 60 * 1000
+    when /\A(\d+)h\z/
+      $1.to_i * 60 * 60 * 1000
+    when /\A(\d+)d\z/
+      $1.to_i * 24 * 60 * 60 * 1000
+    when /\A(\d+)\z/
+      # Plain number means milliseconds (though PostgreSQL typically only returns
+      # this for "0", which means disabled)
+      $1.to_i
+    else
+      raise ArgumentError, "Unrecognized PostgreSQL timeout format: #{timeout_string.inspect}"
     end
   end
 
