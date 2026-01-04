@@ -270,7 +270,21 @@ module PgHaMigrations::SafeStatements
     unless ActiveRecord::Base.connection.postgresql_version >= 9_06_00
       raise PgHaMigrations::InvalidMigrationError, "Removing an index concurrently is not supported on Postgres 9.1 databases"
     end
-    index_size = select_value("SELECT pg_size_pretty(pg_relation_size('#{options[:name]}'))")
+
+    index_exists = select_value(
+      "SELECT 1 FROM pg_class WHERE relname = #{connection.quote(options[:name].to_s)} AND relkind = 'i'"
+    )
+
+    unless index_exists
+      if options[:if_exists]
+        say "Index #{options[:name]} does not exist, skipping removal"
+        return
+      else
+        raise ArgumentError, "Index #{options[:name]} does not exist"
+      end
+    end
+
+    index_size = select_value("SELECT pg_size_pretty(pg_relation_size(#{connection.quote(options[:name].to_s)}))")
     say "Preparing to drop index #{options[:name]} which is #{index_size} on disk..."
     unsafe_remove_index(table, **options.merge(:algorithm => :concurrently))
   end
