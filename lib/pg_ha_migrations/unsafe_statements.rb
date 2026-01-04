@@ -77,7 +77,7 @@ module PgHaMigrations::UnsafeStatements
   # Otherwise, direct dispatch to underlying Rails method without dependent object check / locking
   disable_or_delegate_default_method :add_check_constraint, ":add_check_constraint is NOT SAFE! Use :safe_add_unvalidated_check_constraint and then :safe_validate_check_constraint instead"
   disable_or_delegate_default_method :add_column, ":add_column is NOT SAFE! Use safe_add_column instead"
-  disable_or_delegate_default_method :add_foreign_key, ":add_foreign_key is NOT SAFE! Explicitly call :unsafe_add_foreign_key"
+  disable_or_delegate_default_method :add_foreign_key, ":add_foreign_key is NOT SAFE! Use safe_add_foreign_key instead"
   disable_or_delegate_default_method :add_index, ":add_index is NOT SAFE! Use safe_add_concurrent_index instead"
   disable_or_delegate_default_method :change_column, ":change_column is NOT SAFE! Use a combination of safe and explicit unsafe migration methods instead"
   disable_or_delegate_default_method :change_column_default, ":change_column_default is NOT SAFE! Use safe_change_column_default instead"

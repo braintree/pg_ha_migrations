@@ -2196,6 +2196,130 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
       end
 
+      describe "#safe_add_foreign_key" do
+        before(:each) do
+          setup_migration = Class.new(migration_klass) do
+            def up
+              unsafe_create_table(:foos) { |t| t.bigint :bar_id, null: false }
+              unsafe_create_table(:bars)
+            end
+          end
+          setup_migration.suppress_messages { setup_migration.migrate(:up) }
+        end
+
+        it "adds the foreign key and validates it" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_add_foreign_key :foos, :bars
+            end
+          end
+
+          expect do
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+          end.to make_database_queries(matching: /VALIDATE CONSTRAINT/, count: 1)
+
+          expect(ActiveRecord::Base.connection.foreign_keys(:foos)).to contain_exactly(
+            having_attributes(
+              from_table: :foos,
+              to_table: "bars",
+              options: hash_including(
+                column: "bar_id",
+                primary_key: "id",
+              ),
+            )
+          )
+
+          # Verify the FK is fully validated (convalidated = true)
+          fk_name = "fk_rails_#{OpenSSL::Digest::SHA256.hexdigest("bar_id").first(10)}"
+          validated = ActiveRecord::Base.value_from_sql <<~SQL
+            SELECT convalidated
+            FROM pg_constraint
+            WHERE conname = '#{fk_name}'
+          SQL
+          expect(validated).to eq(true)
+        end
+
+        it "uses a deterministic name based on the column when no name is provided" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_add_foreign_key :foos, :bars
+            end
+          end
+
+          test_migration.suppress_messages { test_migration.migrate(:up) }
+
+          # Rails convention: fk_rails_<10 char hash of column>
+          expected_name = "fk_rails_#{OpenSSL::Digest::SHA256.hexdigest("bar_id").first(10)}"
+          expect(ActiveRecord::Base.connection.foreign_keys(:foos).first.options[:name]).to eq(expected_name)
+        end
+
+        it "uses the provided name when specified" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_add_foreign_key :foos, :bars, name: :my_custom_fk_name
+            end
+          end
+
+          test_migration.suppress_messages { test_migration.migrate(:up) }
+
+          expect(ActiveRecord::Base.connection.foreign_keys(:foos).first.options[:name]).to eq("my_custom_fk_name")
+        end
+
+        it "supports custom column option" do
+          setup_migration = Class.new(migration_klass) do
+            def up
+              unsafe_add_column :foos, :other_bar_id, :bigint
+            end
+          end
+          setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_add_foreign_key :foos, :bars, column: :other_bar_id
+            end
+          end
+
+          test_migration.suppress_messages { test_migration.migrate(:up) }
+
+          expect(ActiveRecord::Base.connection.foreign_keys(:foos)).to contain_exactly(
+            having_attributes(
+              options: hash_including(column: "other_bar_id"),
+            )
+          )
+        end
+
+        it "supports on_delete and on_update options" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_add_foreign_key :foos, :bars, on_delete: :cascade, on_update: :cascade
+            end
+          end
+
+          test_migration.suppress_messages { test_migration.migrate(:up) }
+
+          expect(ActiveRecord::Base.connection.foreign_keys(:foos)).to contain_exactly(
+            having_attributes(
+              options: hash_including(
+                on_delete: :cascade,
+                on_update: :cascade,
+              ),
+            )
+          )
+        end
+
+        it "takes out SHARE ROW EXCLUSIVE locks on both tables" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_add_foreign_key :foos, :bars
+            end
+          end
+
+          expect do
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+          end.to make_database_queries(matching: /LOCK "public"\."foos", "public"\."bars" IN SHARE ROW EXCLUSIVE MODE/, count: 1)
+        end
+      end
+
       describe "#safe_rename_constraint" do
         before(:each) do
           setup_migration = Class.new(migration_klass) do
