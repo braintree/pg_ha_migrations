@@ -697,13 +697,15 @@ module PgHaMigrations::SafeStatements
 
   def adjust_lock_timeout(timeout_seconds = PgHaMigrations::LOCK_TIMEOUT_SECONDS, &block)
     _check_postgres_adapter!
-    original_timeout = _timeout_to_milliseconds(ActiveRecord::Base.value_from_sql("SHOW lock_timeout"))
+    original_timeout_ms = ActiveRecord::Base.value_from_sql(
+      "SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"
+    )
     begin
       connection.execute("SET lock_timeout = #{PG::Connection.escape_string((timeout_seconds * 1000).to_s)};")
       block.call
     ensure
       begin
-        connection.execute("SET lock_timeout = #{original_timeout};")
+        connection.execute("SET lock_timeout = #{original_timeout_ms};")
       rescue ActiveRecord::StatementInvalid => e
         if e.message =~ /PG::InFailedSqlTransaction/
           # If we're in a failed transaction the `SET lock_timeout` will be rolled back,
@@ -717,44 +719,23 @@ module PgHaMigrations::SafeStatements
 
   def adjust_statement_timeout(timeout_seconds, &block)
     _check_postgres_adapter!
-    original_timeout = _timeout_to_milliseconds(ActiveRecord::Base.value_from_sql("SHOW statement_timeout"))
+    original_timeout_ms = ActiveRecord::Base.value_from_sql(
+      "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+    )
     begin
       connection.execute("SET statement_timeout = #{PG::Connection.escape_string((timeout_seconds * 1000).to_s)};")
       block.call
     ensure
       begin
-        connection.execute("SET statement_timeout = #{original_timeout};")
+        connection.execute("SET statement_timeout = #{original_timeout_ms};")
       rescue ActiveRecord::StatementInvalid => e
         if e.message =~ /PG::InFailedSqlTransaction/
-          # If we're in a failed transaction the `SET lock_timeout` will be rolled back,
+          # If we're in a failed transaction the `SET statement_timeout` will be rolled back,
           # so we don't need to worry about cleaning up, and we can't execute SQL anyway.
         else
           raise e
         end
       end
-    end
-  end
-
-  # Parses PostgreSQL timeout strings (e.g., "0", "500ms", "5s", "20min", "1h")
-  # and returns the value in milliseconds.
-  def _timeout_to_milliseconds(timeout_string)
-    case timeout_string
-    when /\A(\d+)ms\z/
-      $1.to_i
-    when /\A(\d+)s\z/
-      $1.to_i * 1000
-    when /\A(\d+)min\z/
-      $1.to_i * 60 * 1000
-    when /\A(\d+)h\z/
-      $1.to_i * 60 * 60 * 1000
-    when /\A(\d+)d\z/
-      $1.to_i * 24 * 60 * 60 * 1000
-    when /\A(\d+)\z/
-      # Plain number means milliseconds (though PostgreSQL typically only returns
-      # this for "0", which means disabled)
-      $1.to_i
-    else
-      raise ArgumentError, "Unrecognized PostgreSQL timeout format: #{timeout_string.inspect}"
     end
   end
 

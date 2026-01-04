@@ -30,8 +30,9 @@ RSpec.describe PgHaMigrations::SafeStatements, "utility methods" do
     end
 
     around(:each) do |example|
-      @original_timeout_raw_value = ActiveRecord::Base.value_from_sql("SHOW lock_timeout")
-      @original_timeout_in_milliseconds = migration.send(:_timeout_to_milliseconds, @original_timeout_raw_value)
+      @original_timeout_in_milliseconds = ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"
+      )
       begin
         example.run
       ensure
@@ -60,7 +61,9 @@ RSpec.describe PgHaMigrations::SafeStatements, "utility methods" do
         end
       end.to raise_error("bogus error")
 
-      expect(ActiveRecord::Base.value_from_sql("SHOW lock_timeout")).to eq(@original_timeout_raw_value)
+      expect(ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"
+      )).to eq(@original_timeout_in_milliseconds)
     end
 
     it "resets the lock_timeout to the original values even after a SQL failure in a transaction" do
@@ -73,18 +76,24 @@ RSpec.describe PgHaMigrations::SafeStatements, "utility methods" do
         end
       end.to raise_error(ActiveRecord::StatementInvalid, /PG::UndefinedColumn/)
 
-      expect(ActiveRecord::Base.value_from_sql("SHOW lock_timeout")).to eq(@original_timeout_raw_value)
+      expect(ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"
+      )).to eq(@original_timeout_in_milliseconds)
     end
 
     it "correctly restores timeout when nested and original was in minutes" do
-      # Set timeout to 5 minutes (displayed as "5min" by PostgreSQL)
+      # Set timeout to 5 minutes (300000ms)
       ActiveRecord::Base.connection.execute("SET lock_timeout = 300000;")
 
       migration.adjust_lock_timeout(1) do
-        expect(ActiveRecord::Base.value_from_sql("SHOW lock_timeout")).to eq("1s")
+        expect(ActiveRecord::Base.value_from_sql(
+          "SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"
+        )).to eq(1000)
       end
 
-      expect(ActiveRecord::Base.value_from_sql("SHOW lock_timeout")).to eq("5min")
+      expect(ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"
+      )).to eq(300000)
     end
   end
 
@@ -97,8 +106,9 @@ RSpec.describe PgHaMigrations::SafeStatements, "utility methods" do
     end
 
     around(:each) do |example|
-      @original_timeout_raw_value = ActiveRecord::Base.value_from_sql("SHOW statement_timeout")
-      @original_timeout_in_milliseconds = migration.send(:_timeout_to_milliseconds, @original_timeout_raw_value)
+      @original_timeout_in_milliseconds = ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+      )
       begin
         example.run
       ensure
@@ -127,7 +137,9 @@ RSpec.describe PgHaMigrations::SafeStatements, "utility methods" do
         end
       end.to raise_error("bogus error")
 
-      expect(ActiveRecord::Base.value_from_sql("SHOW statement_timeout")).to eq(@original_timeout_raw_value)
+      expect(ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+      )).to eq(@original_timeout_in_milliseconds)
     end
 
     it "resets the statement_timeout to the original values even after a SQL failure in a transaction" do
@@ -140,61 +152,39 @@ RSpec.describe PgHaMigrations::SafeStatements, "utility methods" do
         end
       end.to raise_error(ActiveRecord::StatementInvalid, /PG::UndefinedColumn/)
 
-      expect(ActiveRecord::Base.value_from_sql("SHOW statement_timeout")).to eq(@original_timeout_raw_value)
+      expect(ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+      )).to eq(@original_timeout_in_milliseconds)
     end
 
     it "correctly restores timeout when nested and original was in minutes" do
-      # Set timeout to 5 minutes (displayed as "5min" by PostgreSQL)
+      # Set timeout to 5 minutes (300000ms)
       ActiveRecord::Base.connection.execute("SET statement_timeout = 300000;")
 
       migration.adjust_statement_timeout(1) do
-        expect(ActiveRecord::Base.value_from_sql("SHOW statement_timeout")).to eq("1s")
+        expect(ActiveRecord::Base.value_from_sql(
+          "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+        )).to eq(1000)
       end
 
-      expect(ActiveRecord::Base.value_from_sql("SHOW statement_timeout")).to eq("5min")
+      expect(ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+      )).to eq(300000)
     end
 
     it "correctly restores timeout when nested and original was in hours" do
-      # Set timeout to 1 hour (displayed as "1h" by PostgreSQL)
+      # Set timeout to 1 hour (3600000ms)
       ActiveRecord::Base.connection.execute("SET statement_timeout = 3600000;")
 
       migration.adjust_statement_timeout(1) do
-        expect(ActiveRecord::Base.value_from_sql("SHOW statement_timeout")).to eq("1s")
+        expect(ActiveRecord::Base.value_from_sql(
+          "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+        )).to eq(1000)
       end
 
-      expect(ActiveRecord::Base.value_from_sql("SHOW statement_timeout")).to eq("1h")
-    end
-  end
-
-  describe "#_timeout_to_milliseconds" do
-    let(:migration) { Class.new(migration_klass).new }
-
-    it "parses disabled timeout (0)" do
-      expect(migration.send(:_timeout_to_milliseconds, "0")).to eq(0)
-    end
-
-    it "parses milliseconds" do
-      expect(migration.send(:_timeout_to_milliseconds, "500ms")).to eq(500)
-    end
-
-    it "parses seconds" do
-      expect(migration.send(:_timeout_to_milliseconds, "5s")).to eq(5000)
-    end
-
-    it "parses minutes" do
-      expect(migration.send(:_timeout_to_milliseconds, "20min")).to eq(1200000)
-    end
-
-    it "parses hours" do
-      expect(migration.send(:_timeout_to_milliseconds, "1h")).to eq(3600000)
-    end
-
-    it "parses days" do
-      expect(migration.send(:_timeout_to_milliseconds, "1d")).to eq(86400000)
-    end
-
-    it "raises on unrecognized format" do
-      expect { migration.send(:_timeout_to_milliseconds, "5 minutes") }.to raise_error(ArgumentError, /Unrecognized/)
+      expect(ActiveRecord::Base.value_from_sql(
+        "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+      )).to eq(3600000)
     end
   end
 
