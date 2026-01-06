@@ -85,6 +85,10 @@ RSpec.describe PgHaMigrations::SafeStatements, "utility methods" do
       # Set timeout to 5 minutes (300000ms)
       ActiveRecord::Base.connection.execute("SET lock_timeout = 300000;")
 
+      # Demonstrate the previous issue (SHOW returns the value in minutes)                        
+      # that was causing incorrect restoration of the timeout value.                              
+      expect(ActiveRecord::Base.connection.value_from_sql("SHOW lock_timeout")).to eq("5min")
+
       migration.adjust_lock_timeout(1) do
         expect(ActiveRecord::Base.value_from_sql(
           "SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"
@@ -160,6 +164,10 @@ RSpec.describe PgHaMigrations::SafeStatements, "utility methods" do
     it "correctly restores timeout when nested and original was in minutes" do
       # Set timeout to 5 minutes (300000ms)
       ActiveRecord::Base.connection.execute("SET statement_timeout = 300000;")
+
+      # Demonstrate the previous issue (SHOW returns the value in minutes)                        
+      # that was causing incorrect restoration of the timeout value.                              
+      expect(ActiveRecord::Base.connection.value_from_sql("SHOW statement_timeout")).to eq("5min")
 
       migration.adjust_statement_timeout(1) do
         expect(ActiveRecord::Base.value_from_sql(
