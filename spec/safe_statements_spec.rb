@@ -2216,7 +2216,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
           expect do
             test_migration.suppress_messages { test_migration.migrate(:up) }
-          end.to make_database_queries(matching: /FOREIGN KEY.+NOT VALID/, count: 1)
+          end.to make_database_queries(matching: /ADD CONSTRAINT.+FOREIGN KEY.+NOT VALID/m, count: 1)
             .and(make_database_queries(matching: /VALIDATE CONSTRAINT/, count: 1))
 
           expect(ActiveRecord::Base.connection.foreign_keys(:foos)).to contain_exactly(
