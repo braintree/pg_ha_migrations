@@ -2040,7 +2040,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end.to raise_error(ArgumentError, "Index nonexistent_index does not exist")
         end
 
-        it "does not raise an error if the index does not exist and if_exists: true" do
+        it "skips removal and outputs a message when if_exists: true" do
+          original_stdout = $stdout
           setup_migration = Class.new(migration_klass) do
             def up
               unsafe_create_table :foos
@@ -2055,34 +2056,8 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           expect do
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-          end.not_to raise_error
-        end
-
-        it "outputs a message when skipping removal due to if_exists: true" do
-          original_stdout = $stdout
-          begin
-            $stdout = StringIO.new
-
-            setup_migration = Class.new(migration_klass) do
-              def up
-                unsafe_create_table :foos
-              end
-            end
-            setup_migration.suppress_messages { setup_migration.migrate(:up) }
-
-            test_migration = Class.new(migration_klass) do
-              def up
-                safe_remove_concurrent_index :foos, :name => "nonexistent_index", :if_exists => true
-              end
-            end
-
             test_migration.migrate(:up)
-
-            expect($stdout.string).to match(/Index nonexistent_index does not exist, skipping removal/)
-          ensure
-            $stdout = original_stdout
-          end
+          end.to output(/Index nonexistent_index does not exist, skipping removal/m).to_stdout
         end
       end
 

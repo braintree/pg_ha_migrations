@@ -272,7 +272,7 @@ module PgHaMigrations::SafeStatements
     end
 
     index_exists = select_value(
-      "SELECT 1 FROM pg_class WHERE relname = #{connection.quote(options[:name].to_s)} AND relkind = 'i'"
+      "SELECT EXISTS(SELECT 1 FROM pg_class WHERE relname = #{connection.quote(options[:name].to_s)} AND relkind = 'i')"
     )
 
     unless index_exists
