@@ -304,6 +304,25 @@ Safely validate (without acquiring an exclusive lock) existing rows for a newly 
 safe_validate_check_constraint :table, name: :constraint_table_on_column_like_example
 ```
 
+#### safe\_add\_foreign\_key
+
+Safely add a foreign key constraint. The constraint is first added as `NOT VALID` (to avoid blocking writes while the table is scanned) and then validated in a separate step that allows concurrent reads and writes.
+
+```ruby
+safe_add_foreign_key :orders, :customers
+```
+
+With custom options:
+
+```ruby
+safe_add_foreign_key :orders, :customers,
+  column: :buyer_id,
+  name: :fk_orders_buyer,
+  on_delete: :cascade
+```
+
+> **Note:** This method runs multiple DDL statements non-transactionally. The validation step performs a full table scan to verify existing rows satisfy the constraint. While no exclusive lock is held during validation, the scan may take a long time on large tables.
+
 #### safe\_rename\_constraint
 
 Safely rename any (not just `CHECK`) constraint.

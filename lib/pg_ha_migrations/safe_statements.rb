@@ -397,6 +397,17 @@ module PgHaMigrations::SafeStatements
     end
   end
 
+  def safe_add_foreign_key(from_table, to_table, **options)
+    # Rails convention for determining the foreign key column
+    column = options.fetch(:column) { "#{to_table.to_s.singularize}_id" }
+
+    # Rails convention for generating FK name: fk_rails_<10 char hash of column>
+    fk_name = options.fetch(:name) { "fk_rails_#{OpenSSL::Digest::SHA256.hexdigest(column.to_s).first(10)}" }
+
+    unsafe_add_foreign_key(from_table, to_table, validate: false, **options.merge(name: fk_name))
+    safe_validate_check_constraint(from_table, name: fk_name)
+  end
+
   def safe_rename_constraint(table, from:, to:)
     raise ArgumentError, "Expected <from> to be present" unless from.present?
     raise ArgumentError, "Expected <to> to be present" unless to.present?
