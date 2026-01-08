@@ -708,13 +708,15 @@ module PgHaMigrations::SafeStatements
 
   def adjust_lock_timeout(timeout_seconds = PgHaMigrations::LOCK_TIMEOUT_SECONDS, &block)
     _check_postgres_adapter!
-    original_timeout = ActiveRecord::Base.value_from_sql("SHOW lock_timeout").sub(/s\Z/, '').to_i * 1000
+    original_timeout_ms = ActiveRecord::Base.value_from_sql(
+      "SELECT setting::integer FROM pg_settings WHERE name = 'lock_timeout'"
+    )
     begin
       connection.execute("SET lock_timeout = #{PG::Connection.escape_string((timeout_seconds * 1000).to_s)};")
       block.call
     ensure
       begin
-        connection.execute("SET lock_timeout = #{original_timeout};")
+        connection.execute("SET lock_timeout = #{original_timeout_ms};")
       rescue ActiveRecord::StatementInvalid => e
         if e.message =~ /PG::InFailedSqlTransaction/
           # If we're in a failed transaction the `SET lock_timeout` will be rolled back,
@@ -728,16 +730,18 @@ module PgHaMigrations::SafeStatements
 
   def adjust_statement_timeout(timeout_seconds, &block)
     _check_postgres_adapter!
-    original_timeout = ActiveRecord::Base.value_from_sql("SHOW statement_timeout").sub(/s\Z/, '').to_i * 1000
+    original_timeout_ms = ActiveRecord::Base.value_from_sql(
+      "SELECT setting::integer FROM pg_settings WHERE name = 'statement_timeout'"
+    )
     begin
       connection.execute("SET statement_timeout = #{PG::Connection.escape_string((timeout_seconds * 1000).to_s)};")
       block.call
     ensure
       begin
-        connection.execute("SET statement_timeout = #{original_timeout};")
+        connection.execute("SET statement_timeout = #{original_timeout_ms};")
       rescue ActiveRecord::StatementInvalid => e
         if e.message =~ /PG::InFailedSqlTransaction/
-          # If we're in a failed transaction the `SET lock_timeout` will be rolled back,
+          # If we're in a failed transaction the `SET statement_timeout` will be rolled back,
           # so we don't need to worry about cleaning up, and we can't execute SQL anyway.
         else
           raise e
