@@ -244,7 +244,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
           migration.suppress_messages { migration.migrate(:up) }
 
-          expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq("5")
+          # The default value is now (correctly) type casted as an integer in Rails 8.1
+          expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default)
+            .to eq("5")
+            .or eq(5)
 
           ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
           expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(5)
@@ -1728,11 +1731,12 @@ RSpec.describe PgHaMigrations::SafeStatements do
             end
           end
 
+          # Rails 8.1 adds extra clarification to this error message so we use a regex to match
           expect do
             test_migration.suppress_messages { test_migration.migrate(:up) }
           end.to raise_error(
             ArgumentError,
-            "Index name '#{"x" * 64}' on table 'foos3' is too long; the limit is 63 characters"
+            /^Index name '#{"x" * 64}' on table 'foos3' is too long( \(64 characters\))?; the limit is 63 characters$/
           )
         end
 

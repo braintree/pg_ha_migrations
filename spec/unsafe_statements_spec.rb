@@ -583,7 +583,10 @@ RSpec.describe PgHaMigrations::UnsafeStatements do
             migration.suppress_messages { migration.migrate(:up) }
           end.to make_database_queries(matching: /LOCK "public"\."foos" IN ACCESS EXCLUSIVE MODE/, count: 1)
 
-          expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default).to eq("5")
+          # The default value is now (correctly) type casted as an integer in Rails 8.1
+          expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default)
+            .to eq("5")
+            .or eq(5)
         end
 
         it "renames drop_table to unsafe_drop_table" do
