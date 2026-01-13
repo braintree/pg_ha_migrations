@@ -102,7 +102,7 @@ The following functionality is currently unsupported:
 
 ### Compatibility Notes
 
-- While some features may work with other versions, this gem is currently tested against PostgreSQL 13+ and Partman 4+
+- While some features may work with other versions, this gem is currently tested against PostgreSQL 14+ and Partman 4+
 
 ### Migration Methods
 
