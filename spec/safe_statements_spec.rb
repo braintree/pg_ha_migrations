@@ -246,8 +246,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
 
           # The default value is now (correctly) type casted as an integer in Rails 8.1
           expect(ActiveRecord::Base.connection.columns("foos").detect { |column| column.name == "bar" }.default)
-            .to eq("5")
-            .or eq(5)
+            .to(eq("5").or(eq(5)))
 
           ActiveRecord::Base.connection.execute("INSERT INTO foos SELECT FROM (VALUES (1)) t")
           expect(ActiveRecord::Base.connection.select_value("SELECT bar FROM foos")).to eq(5)
