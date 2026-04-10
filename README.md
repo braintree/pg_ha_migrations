@@ -63,9 +63,21 @@ We believe the `force: true` option to ActiveRecord's `create_table` method is a
 
 ### Rollback
 
-Because we require that ["Rollback strategies do not involve reverting the database schema to its previous version"](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#360a), PgHaMigrations does not support ActiveRecord's automatic migration rollback capability.
+Although some schema changes are safe to reverse (e.g., dropping a just-created non-unique index), most possible schema changes are not safe to reverse. A few examples relative to database integrity:
+* Dropping a newly added column may result in data loss.
+* Re-adding a dropped unique index (or any other constraint) may fail because data may now exist that violates the constraint.
+* Dropping a enum value simply isn’t supported by Postgres (and wouldn’t be safe since it might be referenced by rows in the database).
 
-Instead we write all of our migrations with only an `def up` method like:
+These concerns are magnified if we also consider currently running application code (especially across multiple revisions, i.e., during a deploy). For example, the application may expect:
+* Indexes to be present for performant queries.
+* Constraints to hold.
+* Columns to be present.
+
+Therefore we require that ["Rollback strategies do not involve reverting the database schema to its previous version"](https://medium.com/paypal-tech/postgresql-at-scale-database-schema-changes-without-downtime-20d3749ed680#360a), and PgHaMigrations does not support ActiveRecord's automatic migration rollback capability.
+
+Instead we concentrate on ensuring that operations are safe to apply while both old and new revisions of an application are running. In the rare case where we need to “undo” a schema change, we roll forward, rather than rolling back, by having an engineer write a new schema change and deploying that change.
+
+We write all of our migrations with only an `def up` method like:
 
 ```
 def up
@@ -73,7 +85,9 @@ def up
 end
 ```
 
-and never use `def change`. We believe that this is the only safe approach in production environments. For development environments we iterate by recreating the database from scratch every time we make a change.
+and never use `def change`.
+
+For development environments we iterate by recreating the database from scratch every time we make a change.
 
 ### Transactional DDL
 
