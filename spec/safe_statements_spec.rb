@@ -1548,6 +1548,73 @@ RSpec.describe PgHaMigrations::SafeStatements do
           test_migration.suppress_messages { test_migration.migrate(:up) }
         end
 
+        it "rebuilds an invalid child index left by a previous run when if_not_exists is true" do
+          TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+
+          ActiveRecord::Base.connection.execute(<<~SQL)
+            CREATE TABLE foos3_child1 PARTITION OF foos3
+            FOR VALUES FROM ('2020-01-01') TO ('2020-02-01');
+
+            CREATE TABLE foos3_child2 PARTITION OF foos3
+            FOR VALUES FROM ('2020-02-01') TO ('2020-03-01');
+          SQL
+
+          # Simulate a run that was interrupted after child1's index was built
+          # and attached but while child2's concurrent build was still running:
+          # child2 is left with an invalid, unattached index, so the parent
+          # ON ONLY index is invalid too.
+          setup_migration = Class.new(migration_klass) do
+            def up
+              unsafe_add_index :foos3, :updated_at, algorithm: :only
+              unsafe_add_index :foos3_child1, :updated_at
+
+              unsafe_execute(<<~SQL)
+                ALTER INDEX index_foos3_on_updated_at
+                ATTACH PARTITION index_foos3_child1_on_updated_at
+              SQL
+
+              unsafe_add_index :foos3_child2, :updated_at
+
+              unsafe_execute(<<~SQL)
+                UPDATE pg_index SET indisvalid = false
+                WHERE indexrelid = 'index_foos3_child2_on_updated_at'::regclass
+              SQL
+            end
+          end
+
+          setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+          expect(ActiveRecord::Base.pluck_from_sql("SELECT indexrelid::regclass::text FROM pg_index WHERE NOT indisvalid")).to contain_exactly(
+            "index_foos3_on_updated_at",
+            "index_foos3_child2_on_updated_at",
+          )
+
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_add_concurrent_partitioned_index :foos3, :updated_at, if_not_exists: true
+            end
+          end
+
+          test_migration.suppress_messages { test_migration.migrate(:up) }
+
+          aggregate_failures do
+            # the invalid leftover was dropped and rebuilt; every index is valid now
+            expect(ActiveRecord::Base.pluck_from_sql("SELECT indexrelid::regclass::text FROM pg_index WHERE NOT indisvalid")).to be_empty
+
+            %i[foos3 foos3_child1 foos3_child2].each do |table|
+              indexes = ActiveRecord::Base.connection.indexes(table)
+
+              expect(indexes.size).to eq(1)
+              expect(indexes.first).to have_attributes(
+                table: table,
+                name: "index_#{table}_on_updated_at",
+                columns: ["updated_at"],
+                using: :btree,
+              )
+            end
+          end
+        end
+
         it "creates valid index when table / index name use non-standard characters" do
           TestHelpers.create_range_partitioned_table("foos3'", migration_klass)
 

@@ -326,6 +326,31 @@ module PgHaMigrations::SafeStatements
       PgHaMigrations::Index.from_table_and_columns(child_table, columns)
     end
 
+    # A previous run that was interrupted mid-build can leave an invalid index
+    # behind on a child partition. Because CREATE INDEX ... IF NOT EXISTS matches
+    # on name only (not validity), that leftover would be skipped and never
+    # rebuilt, so the parent index would never become valid and this method
+    # would raise below on every re-run. When resuming (if_not_exists), drop any
+    # invalid child leftovers first so they get rebuilt. They are unattached at
+    # this point (the attach step runs only after every child index is built),
+    # so they can be dropped concurrently.
+    if if_not_exists && child_indexes.present?
+      quoted_child_index_names = child_indexes.map { |child_index| connection.quote(child_index.name) }.join(", ")
+
+      invalid_child_index_names = connection.select_values(<<~SQL)
+        SELECT pg_class.relname
+        FROM pg_index
+          JOIN pg_class ON pg_class.oid = pg_index.indexrelid
+        WHERE NOT pg_index.indisvalid
+          AND pg_class.relkind = 'i'
+          AND pg_class.relname = ANY (ARRAY[#{quoted_child_index_names}])
+      SQL
+
+      child_indexes.select { |index| invalid_child_index_names.include?(index.name) }.each do |child_index|
+        safe_remove_concurrent_index(child_index.table.fully_qualified_name, name: child_index.name)
+      end
+    end
+
     # CREATE INDEX ON ONLY parent_table
     unsafe_add_index(
       parent_table.fully_qualified_name,
