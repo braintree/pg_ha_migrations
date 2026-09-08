@@ -2598,23 +2598,18 @@ RSpec.describe PgHaMigrations::SafeStatements do
           expect(storage_parameter(:foos, "autovacuum_vacuum_scale_factor")).to be_nil
         end
 
-        it "acquires a SHARE UPDATE EXCLUSIVE lock" do
-          test_migration = Class.new(migration_klass) do
-            def up
-              safe_set_storage_parameters :foos, autovacuum_analyze_scale_factor: 0.02
-            end
-          end
-
-          expect do
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-          end.to make_database_queries(matching: /LOCK "public"\."foos" IN SHARE UPDATE EXCLUSIVE MODE/, count: 1)
-        end
-
-        it "calls safely_acquire_lock_for_table with share_update_exclusive mode" do
+        it "acquires a SHARE UPDATE EXCLUSIVE lock via safely_acquire_lock_for_table" do
           migration = Class.new(migration_klass).new
 
-          expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos, mode: :share_update_exclusive)
-          migration.safe_set_storage_parameters(:foos, autovacuum_analyze_scale_factor: 0.02)
+          expect(migration).to receive(:safely_acquire_lock_for_table)
+            .with(:foos, mode: :share_update_exclusive)
+            .and_call_original
+
+          expect do
+            migration.suppress_messages do
+              migration.safe_set_storage_parameters(:foos, autovacuum_analyze_scale_factor: 0.02)
+            end
+          end.to make_database_queries(matching: /LOCK "public"\."foos" IN SHARE UPDATE EXCLUSIVE MODE/, count: 1)
         end
 
         it "raises when a parameter is not in the allowlist" do
@@ -2625,8 +2620,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           expect do
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-          end.to raise_error(ArgumentError, /Unknown or unsupported storage parameter\(s\): user_catalog_table/)
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, /Unknown or unsupported storage parameter\(s\): user_catalog_table/)
+          end.to_not make_database_queries(matching: /LOCK/)
         end
 
         it "raises when parameters is not a Hash" do
@@ -2637,8 +2634,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           expect do
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-          end.to raise_error(ArgumentError, "Expected <parameters> to be a non-empty Hash of storage parameters")
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <parameters> to be a non-empty Hash of storage parameters")
+          end.to_not make_database_queries(matching: /LOCK/)
         end
 
         it "raises when parameters is empty" do
@@ -2649,8 +2648,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           expect do
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-          end.to raise_error(ArgumentError, "Expected <parameters> to be a non-empty Hash of storage parameters")
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <parameters> to be a non-empty Hash of storage parameters")
+          end.to_not make_database_queries(matching: /LOCK/)
         end
 
         it "raises when the table does not exist" do
@@ -2661,8 +2662,10 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
 
           expect do
-            test_migration.suppress_messages { test_migration.migrate(:up) }
-          end.to raise_error(PgHaMigrations::UndefinedTableError)
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::UndefinedTableError)
+          end.to_not make_database_queries(matching: /LOCK/)
         end
 
         it "outputs the operation" do
