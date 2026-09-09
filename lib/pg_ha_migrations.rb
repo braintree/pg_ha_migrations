@@ -57,6 +57,28 @@ module PgHaMigrations
     quarter-hour
   ]
 
+  SAFE_STORAGE_PARAMETERS = %w[
+    fillfactor
+    autovacuum_enabled
+    autovacuum_vacuum_threshold
+    autovacuum_vacuum_scale_factor
+    autovacuum_vacuum_insert_threshold
+    autovacuum_vacuum_insert_scale_factor
+    autovacuum_analyze_threshold
+    autovacuum_analyze_scale_factor
+    autovacuum_vacuum_cost_delay
+    autovacuum_vacuum_cost_limit
+    autovacuum_freeze_min_age
+    autovacuum_freeze_max_age
+    autovacuum_freeze_table_age
+    autovacuum_multixact_freeze_min_age
+    autovacuum_multixact_freeze_max_age
+    autovacuum_multixact_freeze_table_age
+    log_autovacuum_min_duration
+    vacuum_truncate
+    vacuum_index_cleanup
+  ].freeze
+
   # Safe versus unsafe in this context specifically means the following:
   # - Safe operations will not block for long periods of time.
   # - Unsafe operations _may_ block for long periods of time.

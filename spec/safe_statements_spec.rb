@@ -2507,6 +2507,180 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
       end
 
+      describe "#safe_set_storage_parameters" do
+        before(:each) do
+          setup_migration = Class.new(migration_klass) do
+            def up
+              unsafe_create_table :foos
+            end
+          end
+          setup_migration.suppress_messages { setup_migration.migrate(:up) }
+        end
+
+        def storage_parameter(table, name)
+          ActiveRecord::Base.connection.select_value(<<~SQL)
+            SELECT option_value
+            FROM pg_options_to_table((SELECT reloptions FROM pg_class WHERE relname = '#{table}'))
+            WHERE option_name = '#{name}'
+          SQL
+        end
+
+        it "sets a single storage parameter" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos, autovacuum_analyze_scale_factor: 0.02
+            end
+          end
+
+          expect do
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+          end.to change { storage_parameter(:foos, "autovacuum_analyze_scale_factor") }.from(nil).to("0.02")
+        end
+
+        it "sets multiple storage parameters in a single statement" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos,
+                autovacuum_analyze_scale_factor: 0.02,
+                autovacuum_vacuum_scale_factor: 0.05
+            end
+          end
+
+          expect do
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+          end.to make_database_queries(matching: /ALTER TABLE "public"\."foos" SET \(/, count: 1)
+
+          expect(storage_parameter(:foos, "autovacuum_analyze_scale_factor")).to eq("0.02")
+          expect(storage_parameter(:foos, "autovacuum_vacuum_scale_factor")).to eq("0.05")
+        end
+
+        it "resets a storage parameter when the value is nil" do
+          setup_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos, autovacuum_analyze_scale_factor: 0.02
+            end
+          end
+          setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos, autovacuum_analyze_scale_factor: nil
+            end
+          end
+
+          expect do
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+          end.to make_database_queries(matching: /ALTER TABLE "public"\."foos" RESET \(autovacuum_analyze_scale_factor\)/, count: 1)
+            .and(change { storage_parameter(:foos, "autovacuum_analyze_scale_factor") }.from("0.02").to(nil))
+        end
+
+        it "combines SET and RESET into a single statement" do
+          setup_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos, autovacuum_vacuum_scale_factor: 0.05
+            end
+          end
+          setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos,
+                autovacuum_analyze_scale_factor: 0.02,
+                autovacuum_vacuum_scale_factor: nil
+            end
+          end
+
+          expect do
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+          end.to make_database_queries(matching: /ALTER TABLE "public"\."foos" SET \(.+\), RESET \(.+\)/, count: 1)
+
+          expect(storage_parameter(:foos, "autovacuum_analyze_scale_factor")).to eq("0.02")
+          expect(storage_parameter(:foos, "autovacuum_vacuum_scale_factor")).to be_nil
+        end
+
+        it "acquires a SHARE UPDATE EXCLUSIVE lock via safely_acquire_lock_for_table" do
+          migration = Class.new(migration_klass).new
+
+          expect(migration).to receive(:safely_acquire_lock_for_table)
+            .with(:foos, mode: :share_update_exclusive)
+            .and_call_original
+
+          expect do
+            migration.suppress_messages do
+              migration.safe_set_storage_parameters(:foos, autovacuum_analyze_scale_factor: 0.02)
+            end
+          end.to make_database_queries(matching: /LOCK "public"\."foos" IN SHARE UPDATE EXCLUSIVE MODE/, count: 1)
+        end
+
+        it "raises when a parameter is not in the allowlist" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos, user_catalog_table: true
+            end
+          end
+
+          expect do
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, /Unknown or unsupported storage parameter\(s\): user_catalog_table/)
+          end.to_not make_database_queries(matching: /LOCK/)
+        end
+
+        it "raises when parameters is not a Hash" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos, "autovacuum_analyze_scale_factor"
+            end
+          end
+
+          expect do
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <parameters> to be a non-empty Hash of storage parameters")
+          end.to_not make_database_queries(matching: /LOCK/)
+        end
+
+        it "raises when parameters is empty" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos, {}
+            end
+          end
+
+          expect do
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(ArgumentError, "Expected <parameters> to be a non-empty Hash of storage parameters")
+          end.to_not make_database_queries(matching: /LOCK/)
+        end
+
+        it "raises when the table does not exist" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :nonexistent_table, autovacuum_analyze_scale_factor: 0.02
+            end
+          end
+
+          expect do
+            expect do
+              test_migration.suppress_messages { test_migration.migrate(:up) }
+            end.to raise_error(PgHaMigrations::UndefinedTableError)
+          end.to_not make_database_queries(matching: /LOCK/)
+        end
+
+        it "outputs the operation" do
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_set_storage_parameters :foos, autovacuum_analyze_scale_factor: 0.02
+            end
+          end
+
+          expect do
+            test_migration.migrate(:up)
+          end.to output(/set_storage_parameters\(:foos, .*autovacuum_analyze_scale_factor/m).to_stdout
+        end
+      end
+
       describe "#safe_create_partitioned_table" do
         it "creates range partition on supported versions" do
           migration = Class.new(migration_klass) do

@@ -524,6 +524,44 @@ If the target table has many partitions (hundreds of thousands), you may need to
 unsafe_partman_standardize_partition_naming :table, statement_timeout: 2
 ```
 
+#### safe\_set\_storage\_parameters
+
+Safely set (or reset) table [storage parameters](https://www.postgresql.org/docs/current/sql-createtable.html#SQL-CREATETABLE-STORAGE-PARAMETERS) — for example autovacuum / analyze scale factor and cost settings.
+
+The supported parameters are:
+
+- `fillfactor`
+- `autovacuum_enabled`
+- `autovacuum_vacuum_threshold`
+- `autovacuum_vacuum_scale_factor`
+- `autovacuum_vacuum_insert_threshold`
+- `autovacuum_vacuum_insert_scale_factor`
+- `autovacuum_analyze_threshold`
+- `autovacuum_analyze_scale_factor`
+- `autovacuum_vacuum_cost_delay`
+- `autovacuum_vacuum_cost_limit`
+- `autovacuum_freeze_min_age`
+- `autovacuum_freeze_max_age`
+- `autovacuum_freeze_table_age`
+- `autovacuum_multixact_freeze_min_age`
+- `autovacuum_multixact_freeze_max_age`
+- `autovacuum_multixact_freeze_table_age`
+- `log_autovacuum_min_duration`
+- `vacuum_truncate`
+- `vacuum_index_cleanup`
+
+```ruby
+safe_set_storage_parameters :table, autovacuum_analyze_scale_factor: 0.02, autovacuum_vacuum_scale_factor: 0.05
+```
+
+Pass `nil` as the value to reset a parameter back to its default:
+
+```ruby
+safe_set_storage_parameters :table, autovacuum_analyze_scale_factor: nil
+```
+
+> **Note:** This method is safe from a database perspective, but only "safe-ish" from an application perspective: none of these parameters can cause an immediate problem, but a misconfigured vacuum / analyze setting could degrade query performance down the line (e.g. via table bloat or stale statistics), so choose values carefully.
+
 ### Utilities
 
 #### safely\_acquire\_lock\_for\_table

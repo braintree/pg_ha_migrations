@@ -406,6 +406,44 @@ module PgHaMigrations::SafeStatements
     raw_execute("SET maintenance_work_mem = '#{PG::Connection.escape_string(gigabytes.to_s)} GB'")
   end
 
+  def safe_set_storage_parameters(table, parameters)
+    if parameters.blank? || !parameters.is_a?(Hash)
+      raise ArgumentError, "Expected <parameters> to be a non-empty Hash of storage parameters"
+    end
+
+    unknown_parameters = parameters.keys.map(&:to_s) - PgHaMigrations::SAFE_STORAGE_PARAMETERS
+
+    if unknown_parameters.any?
+      raise ArgumentError, "Unknown or unsupported storage parameter(s): #{unknown_parameters.join(", ")}"
+    end
+
+    # Resolve the table now so we raise a helpful error if it doesn't exist.
+    validated_table = PgHaMigrations::Table.from_table_name(table)
+
+    set_clauses = []
+    reset_names = []
+
+    parameters.each do |name, value|
+      if value.nil?
+        reset_names << name.to_s
+      else
+        set_clauses << "#{name} = #{connection.quote(value.to_s)}"
+      end
+    end
+
+    actions = []
+    actions << "SET (#{set_clauses.join(", ")})" if set_clauses.any?
+    actions << "RESET (#{reset_names.join(", ")})" if reset_names.any?
+
+    sql = "ALTER TABLE #{validated_table.fully_qualified_name} #{actions.join(", ")}"
+
+    safely_acquire_lock_for_table(table, mode: :share_update_exclusive) do
+      say_with_time "set_storage_parameters(#{table.inspect}, #{parameters.inspect})" do
+        connection.execute(sql)
+      end
+    end
+  end
+
   def safe_add_unvalidated_check_constraint(table, expression, name:)
     unsafe_add_check_constraint(table, expression, name: name, validate: false)
   end
