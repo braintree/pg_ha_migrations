@@ -1205,7 +1205,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
               indexes = ActiveRecord::Base.connection.indexes(table)
 
               expected_comment = table == :foos3 ? "this is an index" : nil
-              expected_name = table == :foos3 ? "foos3_idx" : "index_#{table}_on_updated_at"
+              expected_name = table == :foos3 ? "foos3_idx" : /\Afoos3_idx_[0-9a-f]{10}\z/
 
               expect(indexes.size).to eq(1)
               expect(indexes.first).to have_attributes(
@@ -1217,6 +1217,72 @@ RSpec.describe PgHaMigrations::SafeStatements do
               )
             end
           end
+        end
+
+        [false, true].each do |if_not_exists|
+          it "creates distinct custom indexes on the same columns through sub-partitions (if_not_exists: #{if_not_exists})" do
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+            ActiveRecord::Base.connection.execute(<<~SQL)
+              CREATE TABLE foos3_sub PARTITION OF foos3
+                FOR VALUES FROM ('2020-01-01') TO ('2020-02-01') PARTITION BY RANGE (created_at);
+              CREATE TABLE foos3_leaf PARTITION OF foos3_sub DEFAULT;
+              CREATE TABLE foos3_other PARTITION OF foos3 DEFAULT;
+            SQL
+
+            migration = Class.new(migration_klass).new
+            migration.suppress_messages do
+              migration.safe_add_concurrent_partitioned_index :foos3, :updated_at,
+                name: "present_idx", where: "text_column IS NOT NULL", if_not_exists: if_not_exists
+              migration.safe_add_concurrent_partitioned_index :foos3, :updated_at,
+                name: "missing_idx", where: "text_column IS NULL", if_not_exists: if_not_exists
+            end
+
+            %w[foos3 foos3_sub foos3_leaf foos3_other].each do |table_name|
+              indexes = ActiveRecord::Base.connection.indexes(table_name)
+              expect(indexes.map(&:where)).to contain_exactly("(text_column IS NOT NULL)", "(text_column IS NULL)")
+              expect(indexes.map(&:name).uniq.size).to eq(2)
+              table = PgHaMigrations::Table.from_table_name(table_name)
+              indexes.each do |index|
+                expect(PgHaMigrations::Index.new(index.name, table)).to be_valid
+              end
+            end
+
+            expect(ActiveRecord::Base.connection.select_value(<<~SQL).to_i).to eq(6)
+              SELECT count(*) FROM pg_inherits
+              JOIN pg_class ON pg_class.oid = inhrelid
+              JOIN pg_index ON pg_index.indexrelid = pg_class.oid
+              WHERE relkind IN ('i', 'I') AND NOT indisprimary
+            SQL
+          end
+        end
+
+        it "resumes an interrupted custom index build with the same child names" do
+          TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+          ActiveRecord::Base.connection.execute(<<~SQL)
+            CREATE TABLE foos3_child1 PARTITION OF foos3
+              FOR VALUES FROM ('2020-01-01') TO ('2020-02-01');
+            CREATE TABLE foos3_child2 PARTITION OF foos3 DEFAULT;
+          SQL
+
+          migration = Class.new(migration_klass).new
+          allow(migration).to receive(:safe_add_concurrent_index).and_wrap_original do |method, table, columns, **options|
+            raise "interrupted" if table.include?("child2")
+            method.call(table, columns, **options)
+          end
+          expect do
+            migration.suppress_messages do
+              migration.safe_add_concurrent_partitioned_index :foos3, :updated_at, name: "custom_idx"
+            end
+          end.to raise_error("interrupted")
+
+          original_name = ActiveRecord::Base.connection.indexes(:foos3_child1).first.name
+          allow(migration).to receive(:safe_add_concurrent_index).and_call_original
+          migration.suppress_messages do
+            migration.safe_add_concurrent_partitioned_index :foos3, :updated_at,
+              name: "custom_idx", if_not_exists: true
+          end
+          expect(ActiveRecord::Base.connection.indexes(:foos3_child1).map(&:name)).to eq([original_name])
+          expect(PgHaMigrations::Index.new("custom_idx", PgHaMigrations::Table.from_table_name(:foos3))).to be_valid
         end
 
         it "creates valid hash index when multiple child partitions exist" do
@@ -1642,7 +1708,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
           aggregate_failures do
             expect(ActiveRecord::Base.connection).to receive(:execute).with(/LOCK "public"\."foos3'" IN SHARE MODE/).once.ordered
             expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX "foos3'_bar""_idx" ON ONLY/).once.ordered
-            expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "index_foos3'_child_on_updated_at" ON/).once.ordered
+            expect(ActiveRecord::Base.connection).to receive(:execute).with(/CREATE INDEX CONCURRENTLY "foos3'_bar""_idx_[0-9a-f]{10}" ON/).once.ordered
             expect(ActiveRecord::Base.connection).to receive(:execute).with(/ALTER INDEX .+\nATTACH PARTITION/).once.ordered
           end
 
@@ -1652,7 +1718,7 @@ RSpec.describe PgHaMigrations::SafeStatements do
             ["foos3'", "foos3'_child"].each do |table|
               indexes = ActiveRecord::Base.connection.indexes(table)
 
-              expected_name = table == "foos3'" ? "foos3'_bar\"_idx" : "index_#{table}_on_updated_at"
+              expected_name = table == "foos3'" ? "foos3'_bar\"_idx" : /\Afoos3'_bar"_idx_[0-9a-f]{10}\z/
 
               expect(indexes.size).to eq(1)
               expect(indexes.first).to have_attributes(

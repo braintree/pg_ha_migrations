@@ -166,6 +166,16 @@ module PgHaMigrations
   class Index < Relation
     MAX_NAME_SIZE = 63 # bytes
 
+    def self.from_table_and_parent_index(table, parent_index)
+      # Include both schemas so equally named parents in different schemas can
+      # have partitions in the same schema without colliding.
+      identifier = [parent_index.fully_qualified_name, table.fully_qualified_name].join("\0")
+      suffix = "_#{OpenSSL::Digest::SHA256.hexdigest(identifier).first(10)}"
+      prefix = parent_index.name.to_s.byteslice(0, MAX_NAME_SIZE - suffix.bytesize).scrub("")
+
+      new("#{prefix}#{suffix}", table)
+    end
+
     def self.from_table_and_columns(table, columns)
       name = connection.index_name(table.name, columns)
 

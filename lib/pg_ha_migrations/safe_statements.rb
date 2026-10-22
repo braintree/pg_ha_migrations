@@ -323,7 +323,11 @@ module PgHaMigrations::SafeStatements
     return if if_not_exists && parent_index.valid?
 
     child_indexes = parent_table.partitions.map do |child_table|
-      PgHaMigrations::Index.from_table_and_columns(child_table, columns)
+      if name.present?
+        PgHaMigrations::Index.from_table_and_parent_index(child_table, parent_index)
+      else
+        PgHaMigrations::Index.from_table_and_columns(child_table, columns)
+      end
     end
 
     # A previous run that was interrupted mid-build can leave an invalid index
@@ -376,7 +380,8 @@ module PgHaMigrations::SafeStatements
         add_index_method,
         child_index.table.fully_qualified_name,
         columns,
-        name: child_index.name,
+        # Keep default naming at every level when no custom name was supplied.
+        name: name.present? || add_index_method == :safe_add_concurrent_index ? child_index.name : nil,
         if_not_exists: if_not_exists,
         using: using,
         unique: unique,
