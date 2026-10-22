@@ -34,6 +34,15 @@ RSpec.describe PgHaMigrations::Index do
       expect(names.map(&:bytesize)).to eq([63, 63])
     end
 
+    it "distinguishes equally named child tables in different schemas" do
+      parent_index = described_class.new("custom_idx", parent_table)
+      other_child = PgHaMigrations::Table.new(child_table.name, "other")
+
+      expect(described_class.from_table_and_parent_index(child_table, parent_index).name).not_to eq(
+        described_class.from_table_and_parent_index(other_child, parent_index).name
+      )
+    end
+
     it "truncates multibyte names without splitting characters" do
       parent_index = described_class.new("界" * 21, parent_table)
       child_index = described_class.from_table_and_parent_index(child_table, parent_index)
