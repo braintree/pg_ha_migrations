@@ -291,6 +291,10 @@ indexes on the same columns with different names and predicates. Names are trunc
 as needed to fit PostgreSQL's 63-byte limit. The same naming rule applies recursively
 to sub-partitions; omitting `name:` preserves the default table-and-column names.
 
+When resuming with `if_not_exists: true`, indexes already attached to the parent are
+reused, including indexes created with older naming rules. Unattached indexes with
+legacy names are left untouched; they may have a different definition.
+
 ```ruby
 safe_add_concurrent_partitioned_index :partitioned_table, :column,
   name: "custom_name_idx", where: "column IS NOT NULL"

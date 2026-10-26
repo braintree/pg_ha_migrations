@@ -1254,12 +1254,21 @@ RSpec.describe PgHaMigrations::SafeStatements do
                 end
               end
 
-              expect(ActiveRecord::Base.connection.select_value(<<~SQL).to_i).to eq(6)
-                SELECT count(*) FROM pg_inherits
-                JOIN pg_class ON pg_class.oid = inhrelid
-                JOIN pg_index ON pg_index.indexrelid = pg_class.oid
-                WHERE relkind IN ('i', 'I') AND NOT indisprimary
+              attachments = ActiveRecord::Base.connection.select_rows(<<~SQL)
+                SELECT parent_table.relname, child_table.relname
+                FROM pg_inherits
+                JOIN pg_index parent_index ON parent_index.indexrelid = inhparent
+                JOIN pg_index child_index ON child_index.indexrelid = inhrelid
+                JOIN pg_class parent_table ON parent_table.oid = parent_index.indrelid
+                JOIN pg_class child_table ON child_table.oid = child_index.indrelid
+                WHERE parent_index.indrelid IN ('foos3'::regclass, 'foos3_sub'::regclass)
+                  AND NOT parent_index.indisprimary
               SQL
+              expect(attachments).to contain_exactly(
+                ["foos3", "foos3_sub"], ["foos3", "foos3_sub"],
+                ["foos3", "foos3_other"], ["foos3", "foos3_other"],
+                ["foos3_sub", "foos3_leaf"], ["foos3_sub", "foos3_leaf"],
+              )
             end
           end
         end
@@ -1280,29 +1289,28 @@ RSpec.describe PgHaMigrations::SafeStatements do
               end
             end.new
 
-            allow(test_migration).to receive(:safe_add_concurrent_index).and_wrap_original do |method, table, columns, **options|
-              if table.include?("child2")
-                if invalid_child
-                  method.call(table, columns, **options)
-                  connection = ActiveRecord::Base.connection
-                  connection.execute(<<~SQL)
-                    UPDATE pg_index SET indisvalid = false
-                    WHERE indexrelid = #{connection.quote(options[:name])}::regclass
-                  SQL
-                end
-                raise "interrupted"
-              end
-              method.call(table, columns, **options)
+            parent_table = PgHaMigrations::Table.from_table_name(:foos3)
+            parent_index = PgHaMigrations::Index.new("custom_idx", parent_table)
+            children = %i[foos3_child1 foos3_child2].map do |table|
+              PgHaMigrations::Index.from_table_and_parent_index(PgHaMigrations::Table.from_table_name(table), parent_index)
             end
-            expect do
-              test_migration.suppress_messages { test_migration.migrate(:up) }
-            end.to raise_error("interrupted")
+            setup_migration = Class.new(migration_klass).new
+            setup_migration.suppress_messages do
+              setup_migration.unsafe_add_index :foos3, :updated_at, name: parent_index.name, algorithm: :only
+              setup_migration.unsafe_add_index :foos3_child1, :updated_at, name: children.first.name
+              if invalid_child
+                setup_migration.unsafe_add_index :foos3_child2, :updated_at, name: children.last.name
+                ActiveRecord::Base.connection.execute(<<~SQL)
+                  UPDATE pg_index SET indisvalid = false
+                  WHERE indexrelid = '#{children.last.fully_qualified_name}'::regclass
+                SQL
+              end
+            end
 
             original_index = ActiveRecord::Base.connection.select_value(<<~SQL)
               SELECT indexrelid FROM pg_index
               WHERE indrelid = 'foos3_child1'::regclass AND NOT indisprimary
             SQL
-            allow(test_migration).to receive(:safe_add_concurrent_index).and_call_original
             test_migration.suppress_messages { test_migration.migrate(:up) }
 
             aggregate_failures do
@@ -1320,6 +1328,50 @@ RSpec.describe PgHaMigrations::SafeStatements do
             expect(test_migration).not_to receive(:unsafe_add_index)
             expect(test_migration).not_to receive(:safe_add_concurrent_index)
             test_migration.suppress_messages { test_migration.migrate(:up) }
+          end
+        end
+
+        [false, true].each do |subpartitioned|
+          it "resumes a legacy custom index build with an attached #{subpartitioned ? 'sub-partition' : 'child'} index" do
+            TestHelpers.create_range_partitioned_table(:foos3, migration_klass)
+            ActiveRecord::Base.connection.execute(<<~SQL)
+              CREATE TABLE foos3_child1 PARTITION OF foos3
+                FOR VALUES FROM ('2020-01-01') TO ('2020-02-01') #{'PARTITION BY RANGE (created_at)' if subpartitioned};
+              CREATE TABLE foos3_child2 PARTITION OF foos3 DEFAULT;
+            SQL
+
+            if subpartitioned
+              ActiveRecord::Base.connection.execute("CREATE TABLE foos3_leaf PARTITION OF foos3_child1 DEFAULT")
+            end
+
+            setup_migration = Class.new(migration_klass) do
+              class_attribute :subpartitioned
+              self.subpartitioned = subpartitioned
+
+              def up
+                unsafe_add_index :foos3, :updated_at, name: "custom_idx", algorithm: :only
+                unsafe_add_index :foos3_child1, :updated_at, algorithm: (subpartitioned ? :only : nil)
+                unsafe_execute "ALTER INDEX custom_idx ATTACH PARTITION index_foos3_child1_on_updated_at"
+                # An unattached default-named index may belong to another migration.
+                unsafe_add_index :foos3_child2, :updated_at, using: :hash
+              end
+            end
+            setup_migration.suppress_messages { setup_migration.migrate(:up) }
+            original_oid = ActiveRecord::Base.connection.select_value("SELECT 'index_foos3_child1_on_updated_at'::regclass::oid")
+
+            test_migration = Class.new(migration_klass) do
+              def up
+                safe_add_concurrent_partitioned_index :foos3, :updated_at, name: "custom_idx", if_not_exists: true
+              end
+            end
+            test_migration.suppress_messages { test_migration.migrate(:up) }
+
+            aggregate_failures do
+              expect(ActiveRecord::Base.connection.indexes(:foos3_child1).map(&:name)).to eq(["index_foos3_child1_on_updated_at"])
+              expect(ActiveRecord::Base.connection.select_value("SELECT 'index_foos3_child1_on_updated_at'::regclass::oid")).to eq(original_oid)
+              expect(ActiveRecord::Base.connection.indexes(:foos3_child2).map(&:using)).to contain_exactly(:hash, :btree)
+              expect(PgHaMigrations::Index.new("custom_idx", PgHaMigrations::Table.from_table_name(:foos3))).to be_valid
+            end
           end
         end
 
