@@ -284,7 +284,9 @@ module PgHaMigrations::SafeStatements
       end
     end
 
-    index_size = select_value("SELECT pg_size_pretty(pg_relation_size(#{connection.quote(options[:name].to_s)}))")
+    # The regclass cast parses its input as an identifier, so the name must be
+    # quoted to keep its case and match the relname found above.
+    index_size = select_value("SELECT pg_size_pretty(pg_relation_size(#{connection.quote(PG::Connection.quote_ident(options[:name].to_s))}))")
     say "Preparing to drop index #{options[:name]} which is #{index_size} on disk..."
     unsafe_remove_index(table, **options.merge(:algorithm => :concurrently))
   end

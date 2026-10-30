@@ -2079,6 +2079,29 @@ RSpec.describe PgHaMigrations::SafeStatements do
           end
         end
 
+        it "removes an index with a mixed-case name" do
+          setup_migration = Class.new(migration_klass) do
+            def up
+              unsafe_create_table :foos
+              unsafe_add_column :foos, :bar, :text
+              unsafe_add_index :foos, [:bar], :name => "index_foos_on_bar_DESC"
+            end
+          end
+          setup_migration.suppress_messages { setup_migration.migrate(:up) }
+
+          test_migration = Class.new(migration_klass) do
+            def up
+              safe_remove_concurrent_index :foos, :name => "index_foos_on_bar_DESC"
+            end
+          end
+
+          expect do
+            test_migration.migrate(:up)
+          end.to output(/index index_foos_on_bar_DESC which is \d+ bytes/).to_stdout
+
+          expect(ActiveRecord::Base.connection.indexes("foos")).to be_empty
+        end
+
         it "raises a nice error if options does not have :name key" do
           test_migration = Class.new(migration_klass) do
             def up
