@@ -284,17 +284,23 @@ Add an index to a natively partitioned table concurrently, as described in the [
 safe_add_concurrent_partitioned_index :partitioned_table, :column
 ```
 
-Add a composite index using the `hash` index type with custom name for the parent index when the parent table contains sub-partitions.
+Add an index with a custom name when the parent table contains sub-partitions.
+With `name:`, child index names are derived from the parent index name and a deterministic
+hash of the schema-qualified parent index and child table names. This allows multiple
+indexes on the same columns with different names and predicates. Names are truncated
+as needed to fit PostgreSQL's 63-byte limit. The same naming rule applies recursively
+to sub-partitions; omitting `name:` preserves the default table-and-column names.
+
+When resuming with `if_not_exists: true`, indexes already attached to the parent are
+reused, including indexes created with older naming rules. Unattached indexes with
+legacy names are left untouched; they may have a different definition.
 
 ```ruby
-# Assuming this table has partitions child1 and child2, and child1 has sub-partitions sub1 and sub2,
-# the following indexes will be created:
-#   - custom_name_idx
-#   - index_child1_on_column1_column2 (attached to custom_name_idx)
-#   - index_sub1_on_column1_column2 (attached to index_child1_on_column1_column2)
-#   - index_sub2_on_column1_column2 (attached to index_child1_on_column1_column2)
-#   - index_child2_on_column1_column2 (attached to custom_name_idx)
-safe_add_concurrent_partitioned_index :partitioned_table, [:column1, :column2], name: "custom_name_idx", using: :hash
+safe_add_concurrent_partitioned_index :partitioned_table, :column,
+  name: "custom_name_idx", where: "column IS NOT NULL"
+# Parent: custom_name_idx
+# Children: custom_name_idx_<hash>
+# Sub-partitions: custom_name_idx_<hash>_<hash> (truncated if needed)
 ```
 
 > **Note:**

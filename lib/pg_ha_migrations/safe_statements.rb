@@ -324,8 +324,22 @@ module PgHaMigrations::SafeStatements
     # Short-circuit when if_not_exists: true and index already valid
     return if if_not_exists && parent_index.valid?
 
+    # Attached indexes already belong to this parent, even if an older version
+    # created them using the default names. Preserve them when resuming.
+    attached_indexes = if name.present? && if_not_exists
+      parent_index.attached_partitions.index_by(&:table)
+    else
+      {}
+    end
+
     child_indexes = parent_table.partitions.map do |child_table|
-      PgHaMigrations::Index.from_table_and_columns(child_table, columns)
+      next attached_indexes[child_table] if attached_indexes.key?(child_table)
+
+      if name.present?
+        PgHaMigrations::Index.from_table_and_parent_index(child_table, parent_index)
+      else
+        PgHaMigrations::Index.from_table_and_columns(child_table, columns)
+      end
     end
 
     # A previous run that was interrupted mid-build can leave an invalid index
@@ -368,17 +382,22 @@ module PgHaMigrations::SafeStatements
     )
 
     child_indexes.each do |child_index|
-      add_index_method = if child_index.table.natively_partitioned?
+      partitioned = child_index.table.natively_partitioned?
+      add_index_method = if partitioned
         :safe_add_concurrent_partitioned_index
       else
         :safe_add_concurrent_index
       end
 
+      # Preserve default naming when recursing without a custom name.
+      child_name = child_index.name
+      child_name = nil if partitioned && name.blank?
+
       send(
         add_index_method,
         child_index.table.fully_qualified_name,
         columns,
-        name: child_index.name,
+        name: child_name,
         if_not_exists: if_not_exists,
         using: using,
         unique: unique,

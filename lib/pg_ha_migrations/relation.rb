@@ -166,6 +166,16 @@ module PgHaMigrations
   class Index < Relation
     MAX_NAME_SIZE = 63 # bytes
 
+    def self.from_table_and_parent_index(table, parent_index)
+      # Include both schemas so equally named parents in different schemas can
+      # have partitions in the same schema without colliding.
+      hash_input = [parent_index.fully_qualified_name, table.fully_qualified_name].join("\0")
+      suffix = "_#{OpenSSL::Digest::SHA256.hexdigest(hash_input).first(10)}"
+      prefix = parent_index.name.to_s.byteslice(0, MAX_NAME_SIZE - suffix.bytesize).scrub("")
+
+      new("#{prefix}#{suffix}", table)
+    end
+
     def self.from_table_and_columns(table, columns)
       name = connection.index_name(table.name, columns)
 
@@ -184,6 +194,23 @@ module PgHaMigrations
     end
 
     attr_accessor :table
+
+    def attached_partitions
+      connection.select_all(<<~SQL).map do |row|
+        SELECT child.relname AS index_name, child_table.relname AS table_name, child_ns.nspname AS schema_name
+        FROM pg_inherits
+          JOIN pg_class parent ON parent.oid = inhparent
+          JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+          JOIN pg_class child ON child.oid = inhrelid
+          JOIN pg_index ON pg_index.indexrelid = child.oid
+          JOIN pg_class child_table ON child_table.oid = pg_index.indrelid
+          JOIN pg_namespace child_ns ON child_ns.oid = child_table.relnamespace
+        WHERE parent.relname = #{connection.quote(name)}
+          AND parent_ns.nspname = #{connection.quote(schema)}
+      SQL
+        self.class.new(row["index_name"], Table.new(row["table_name"], row["schema_name"]))
+      end
+    end
 
     def initialize(name, table)
       super(name, table.schema)
