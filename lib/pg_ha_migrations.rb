@@ -118,6 +118,7 @@ end
 require "pg_ha_migrations/constraint"
 require "pg_ha_migrations/extension"
 require "pg_ha_migrations/relation"
+require "pg_ha_migrations/column_type"
 require "pg_ha_migrations/blocking_database_transactions"
 require "pg_ha_migrations/blocking_database_transactions_reporter"
 require "pg_ha_migrations/partman_config"

@@ -192,6 +192,36 @@ safe_change_column_default :table, :column, -> { "'NOW()'" }
 
 > **Note:** On Postgres 11+ adding a column with a constant default value does not rewrite or scan the table (under a lock or otherwise). In that case a migration adding a column with a default should do so in a single operation rather than the two-step `safe_add_column` followed by `safe_change_column_default`. We enforce this best practice with the error `PgHaMigrations::BestPracticeError`, but if your prefer otherwise (or are running in a mixed Postgres version environment), you may opt out by setting `config.prefer_single_step_column_addition_with_default = false` [in your configuration initializer](#configuration).
 
+#### safe\_change\_column
+
+Safely change a column's type when Postgres can apply the change without rewriting the table. Only the `:limit`, `:precision`, and `:scale` options are accepted.
+
+```ruby
+safe_change_column :table, :column, :string, limit: 255
+safe_change_column :table, :column, :text
+safe_change_column :table, :column, :decimal, precision: 12, scale: 2
+```
+
+The following changes are allowed:
+
+- `varchar(n)` to `varchar(m)` where `m >= n`, to unlimited `varchar`, or to `text`
+- `text` to unlimited `varchar`
+- `numeric(p, s)` to `numeric(q, s)` where `q >= p` (same scale), or to unconstrained `numeric`
+- `bit varying(n)` to `bit varying(m)` where `m >= n`, or to unlimited `bit varying`
+- Increasing (or removing) the precision of `timestamp`, `timestamptz`, `time`, `timetz`, and `interval` (without a fields restriction)
+- `cidr` to `inet`
+- `timestamp` to `timestamptz` (and back) when the session time zone is UTC
+
+Any other change (e.g., `integer` to `bigint`, shrinking a limit, or changing a `numeric` scale) raises `PgHaMigrations::UnsafeMigrationError`; use `unsafe_change_column` if you really want to rewrite the table.
+
+Even when the table is not rewritten, Postgres does some work under the `ACCESS EXCLUSIVE` lock that can take a long time on large tables, so this method also raises if the column (on the table or any of its partitions):
+
+- is referenced by a validated CHECK constraint, because Postgres re-validates it with a full table scan (constraints added with `NOT VALID` are not re-checked)
+- is used in an index expression or partial index predicate, because those indexes are always rebuilt
+- has any index or foreign key and the change is between `timestamp` and `timestamptz`, because the operator class changes, so indexes are rebuilt and foreign keys are re-validated
+
+Otherwise, plain indexes, foreign keys, and `NOT NULL` constraints on the column are kept without being rebuilt or re-validated.
+
 #### safe\_make\_column\_nullable
 
 Safely make the column nullable.
