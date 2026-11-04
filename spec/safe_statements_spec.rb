@@ -524,6 +524,282 @@ RSpec.describe PgHaMigrations::SafeStatements do
         end
       end
 
+      describe "#safe_change_column" do
+        before(:each) do
+          setup_migration = Class.new(migration_klass) do
+            def up
+              unsafe_create_table :foos do |t|
+                t.string :name, limit: 10
+                t.decimal :amount, precision: 10, scale: 2
+                t.column :occurred_at, :timestamp
+                t.integer :count
+              end
+              unsafe_execute "INSERT INTO foos (name, amount, occurred_at, count) VALUES ('alpha', 12.34, '2026-01-01 12:00:00', 1)"
+            end
+          end
+          setup_migration.suppress_messages { setup_migration.migrate(:up) }
+        end
+
+        def column_sql_type(table, column)
+          ActiveRecord::Base.connection.select_value(<<~SQL)
+            SELECT format_type(atttypid, atttypmod)
+            FROM pg_attribute
+            WHERE attrelid = '#{table}'::regclass AND attname = '#{column}'
+          SQL
+        end
+
+        def relfilenode(relation)
+          ActiveRecord::Base.connection.select_value("SELECT relfilenode FROM pg_class WHERE oid = '#{relation}'::regclass")
+        end
+
+        def run_migration(migration_klass, &block)
+          migration = Class.new(migration_klass) do
+            define_method(:up, &block)
+          end
+          migration.suppress_messages { migration.migrate(:up) }
+        end
+
+        it "increases a varchar limit without rewriting the table" do
+          original_relfilenode = relfilenode(:foos)
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :name, :string, limit: 20 }
+          end.to change { column_sql_type(:foos, :name) }.from("character varying(10)").to("character varying(20)")
+
+          expect(relfilenode(:foos)).to eq(original_relfilenode)
+          expect(ActiveRecord::Base.connection.select_value("SELECT name FROM foos")).to eq("alpha")
+        end
+
+        it "changes a varchar to text without rewriting the table" do
+          original_relfilenode = relfilenode(:foos)
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :name, :text }
+          end.to change { column_sql_type(:foos, :name) }.to("text")
+
+          expect(relfilenode(:foos)).to eq(original_relfilenode)
+        end
+
+        it "increases decimal precision with the same scale without rewriting the table" do
+          original_relfilenode = relfilenode(:foos)
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :amount, :decimal, precision: 14, scale: 2 }
+          end.to change { column_sql_type(:foos, :amount) }.from("numeric(10,2)").to("numeric(14,2)")
+
+          expect(relfilenode(:foos)).to eq(original_relfilenode)
+        end
+
+        it "converts timestamp to timestamptz when the session time zone is UTC and the column has no indexes" do
+          original_relfilenode = relfilenode(:foos)
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :occurred_at, :timestamptz }
+          end.to change { column_sql_type(:foos, :occurred_at) }.to("timestamp with time zone")
+
+          expect(relfilenode(:foos)).to eq(original_relfilenode)
+          expect(ActiveRecord::Base.connection.select_value("SELECT occurred_at = '2026-01-01 12:00:00+00' FROM foos")).to eq(true)
+        end
+
+        it "keeps plain indexes on the column" do
+          run_migration(migration_klass) { unsafe_add_index :foos, :name }
+          index_name = ActiveRecord::Base.connection.indexes(:foos).first.name
+          original_index_relfilenode = relfilenode(index_name)
+
+          run_migration(migration_klass) { safe_change_column :foos, :name, :string, limit: 50 }
+
+          expect(column_sql_type(:foos, :name)).to eq("character varying(50)")
+          expect(relfilenode(index_name)).to eq(original_index_relfilenode)
+        end
+
+        it "acquires an ACCESS EXCLUSIVE lock via safely_acquire_lock_for_table" do
+          migration = Class.new(migration_klass).new
+
+          expect(migration).to receive(:safely_acquire_lock_for_table).with(:foos).and_call_original
+
+          expect do
+            migration.suppress_messages do
+              migration.safe_change_column(:foos, :name, :string, limit: 20)
+            end
+          end.to make_database_queries(matching: /LOCK "public"\."foos" IN ACCESS EXCLUSIVE MODE/, count: 1)
+            .and(make_database_queries(matching: /ALTER TABLE "public"\."foos" ALTER COLUMN "name" TYPE character varying\(20\)/, count: 1))
+        end
+
+        it "works with schema-qualified table names" do
+          run_migration(migration_klass) do
+            unsafe_execute "CREATE SCHEMA partman"
+            unsafe_execute "CREATE TABLE partman.bars (name varchar(5))"
+          end
+
+          run_migration(migration_klass) { safe_change_column "partman.bars", :name, :string, limit: 15 }
+
+          expect(column_sql_type("partman.bars", :name)).to eq("character varying(15)")
+        end
+
+        it "raises when decreasing a varchar limit" do
+          expect do
+            expect do
+              run_migration(migration_klass) { safe_change_column :foos, :name, :string, limit: 5 }
+            end.to raise_error(PgHaMigrations::UnsafeMigrationError, /from character varying\(10\) to character varying\(5\) requires a table rewrite.*use unsafe_change_column/)
+          end.to_not make_database_queries(matching: /LOCK|ALTER TABLE/)
+
+          expect(column_sql_type(:foos, :name)).to eq("character varying(10)")
+        end
+
+        it "raises when changing decimal scale" do
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :amount, :decimal, precision: 14, scale: 3 }
+          end.to raise_error(PgHaMigrations::UnsafeMigrationError, /from numeric\(10,2\) to numeric\(14,3\) requires a table rewrite/)
+        end
+
+        it "raises when changing integer to bigint" do
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :count, :bigint }
+          end.to raise_error(PgHaMigrations::UnsafeMigrationError, /from integer to bigint requires a table rewrite/)
+        end
+
+        it "raises when converting timestamp to timestamptz outside of a UTC session" do
+          connection = ActiveRecord::Base.connection
+          original_time_zone = connection.select_value("SHOW TimeZone")
+          connection.execute("SET TimeZone = 'America/New_York'")
+
+          begin
+            expect do
+              run_migration(migration_klass) { safe_change_column :foos, :occurred_at, :timestamptz }
+            end.to raise_error(PgHaMigrations::UnsafeMigrationError, /requires a table rewrite.*only avoids the rewrite on Postgres 12\+ when the session time zone is UTC/)
+          ensure
+            connection.execute("SET TimeZone = #{connection.quote(original_time_zone)}")
+          end
+        end
+
+        it "raises when converting an indexed timestamp column to timestamptz" do
+          run_migration(migration_klass) { unsafe_add_index :foos, :occurred_at }
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :occurred_at, :timestamptz }
+          end.to raise_error(PgHaMigrations::UnsafeMigrationError, /rebuilds index\(es\) index_foos_on_occurred_at/)
+        end
+
+        it "raises when converting a foreign key column to timestamptz" do
+          run_migration(migration_klass) do
+            unsafe_execute "CREATE TABLE events (occurred_at timestamp PRIMARY KEY)"
+            unsafe_execute "ALTER TABLE foos ADD CONSTRAINT foos_occurred_at_fk FOREIGN KEY (occurred_at) REFERENCES events (occurred_at) NOT VALID"
+          end
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :occurred_at, :timestamptz }
+          end.to raise_error(PgHaMigrations::UnsafeMigrationError, /re-validates foreign key\(s\) foos_occurred_at_fk/)
+        end
+
+        it "keeps foreign keys when widening a varchar" do
+          run_migration(migration_klass) do
+            unsafe_execute "CREATE TABLE names (name varchar(10) PRIMARY KEY)"
+            unsafe_execute "INSERT INTO names VALUES ('alpha')"
+            unsafe_execute "ALTER TABLE foos ADD CONSTRAINT foos_name_fk FOREIGN KEY (name) REFERENCES names (name)"
+          end
+
+          run_migration(migration_klass) { safe_change_column :foos, :name, :string, limit: 20 }
+
+          expect(column_sql_type(:foos, :name)).to eq("character varying(20)")
+        end
+
+        it "raises when an expression index uses the column" do
+          run_migration(migration_klass) { unsafe_execute "CREATE INDEX foos_lower_name ON foos (lower(name))" }
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :name, :string, limit: 20 }
+          end.to raise_error(PgHaMigrations::UnsafeMigrationError, /rebuilds index\(es\) foos_lower_name/)
+        end
+
+        it "raises when a partial index predicate uses the column" do
+          run_migration(migration_klass) { unsafe_execute "CREATE INDEX foos_count_named ON foos (count) WHERE name IS NOT NULL" }
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :name, :text }
+          end.to raise_error(PgHaMigrations::UnsafeMigrationError, /rebuilds index\(es\) foos_count_named/)
+        end
+
+        it "raises when a validated check constraint references the column" do
+          run_migration(migration_klass) do
+            safe_add_unvalidated_check_constraint :foos, "length(name) > 1", name: :name_length
+            safe_validate_check_constraint :foos, name: :name_length
+          end
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :name, :string, limit: 20 }
+          end.to raise_error(PgHaMigrations::UnsafeMigrationError, /re-validates CHECK constraint\(s\) name_length/)
+        end
+
+        it "allows an unvalidated check constraint on the column" do
+          run_migration(migration_klass) do
+            safe_add_unvalidated_check_constraint :foos, "length(name) > 1", name: :name_length
+          end
+
+          run_migration(migration_klass) { safe_change_column :foos, :name, :string, limit: 20 }
+
+          expect(column_sql_type(:foos, :name)).to eq("character varying(20)")
+          constraint = PgHaMigrations::Table.from_table_name(:foos).check_constraints.find { |c| c.name == "name_length" }
+          expect(constraint.validated).to eq(false)
+        end
+
+        it "changes the column on every partition of a partitioned table" do
+          run_migration(migration_klass) do
+            unsafe_execute "CREATE TABLE parted (id int, name varchar(10)) PARTITION BY RANGE (id)"
+            unsafe_execute "CREATE TABLE parted_1 PARTITION OF parted FOR VALUES FROM (0) TO (10)"
+            unsafe_execute "CREATE INDEX ON parted (name)"
+          end
+          original_relfilenode = relfilenode(:parted_1)
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :parted, :name, :string, limit: 20 }
+          end.to change { column_sql_type(:parted_1, :name) }.to("character varying(20)")
+
+          expect(relfilenode(:parted_1)).to eq(original_relfilenode)
+        end
+
+        it "raises when a partition has an index that would be rebuilt" do
+          run_migration(migration_klass) do
+            unsafe_execute "CREATE TABLE parted (id int, name varchar(10)) PARTITION BY RANGE (id)"
+            unsafe_execute "CREATE TABLE parted_1 PARTITION OF parted FOR VALUES FROM (0) TO (10)"
+            unsafe_execute "CREATE INDEX parted_1_lower_name ON parted_1 (lower(name))"
+          end
+
+          expect do
+            run_migration(migration_klass) { safe_change_column :parted, :name, :string, limit: 20 }
+          end.to raise_error(PgHaMigrations::UnsafeMigrationError, /rebuilds index\(es\) parted_1_lower_name/)
+        end
+
+        it "raises when passed options other than limit, precision, and scale" do
+          expect do
+            expect do
+              run_migration(migration_klass) { safe_change_column :foos, :name, :string, limit: 20, default: "x", null: false }
+            end.to raise_error(ArgumentError, /only supports the :limit, :precision, and :scale options, received: :default, :null/)
+          end.to_not make_database_queries(matching: /LOCK|ALTER TABLE/)
+        end
+
+        it "raises when the column does not exist" do
+          expect do
+            run_migration(migration_klass) { safe_change_column :foos, :nope, :text }
+          end.to raise_error(PgHaMigrations::InvalidMigrationError, /Column "nope" does not exist on table "foos"/)
+        end
+
+        it "raises when the table does not exist" do
+          expect do
+            run_migration(migration_klass) { safe_change_column :nonexistent_table, :name, :text }
+          end.to raise_error(PgHaMigrations::UndefinedTableError)
+        end
+
+        it "outputs the operation" do
+          migration = Class.new(migration_klass) do
+            def up
+              safe_change_column :foos, :name, :string, limit: 20
+            end
+          end
+
+          expect { migration.migrate(:up) }.to output(/change_column\(:foos, :name, :string, limit: 20\)/m).to_stdout
+        end
+      end
+
       describe "#safe_make_column_nullable" do
         it "removes the not null constraint from the column" do
           migration = Class.new(migration_klass) do

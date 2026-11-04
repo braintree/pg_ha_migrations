@@ -122,6 +122,132 @@ module PgHaMigrations::SafeStatements
     end
   end
 
+  # Changes a column's type only when Postgres can do it without rewriting
+  # the table, rebuilding indexes, or re-scanning the table to re-validate
+  # CHECK constraints (all of which would happen while holding an
+  # ACCESS EXCLUSIVE lock). See the README for the supported conversions.
+  def safe_change_column(table, column, type, **options)
+    unsupported_options = options.keys - [:limit, :precision, :scale]
+    if unsupported_options.any?
+      raise ArgumentError, "safe_change_column only supports the :limit, :precision, and :scale options, " \
+        "received: #{unsupported_options.map(&:inspect).join(", ")}"
+    end
+
+    validated_table = PgHaMigrations::Table.from_table_name(table)
+    sql_type = connection.type_to_sql(type, **options)
+
+    current_type = PgHaMigrations::ColumnType.from_column(validated_table, column)
+    new_type = PgHaMigrations::ColumnType.from_sql_type(sql_type)
+
+    unless current_type.rewrite_free_change_to?(new_type, utc_session_time_zone: PgHaMigrations::ColumnType.utc_session_time_zone?)
+      message = "Changing #{validated_table.inspect}.#{column.to_s.inspect} from #{current_type} to #{new_type} " \
+        "requires a table rewrite while holding an ACCESS EXCLUSIVE lock."
+
+      if current_type.time_zone_change?(new_type)
+        message += " Converting between timestamp and timestamptz only avoids the rewrite on Postgres 12+ " \
+          "when the session time zone is UTC."
+      end
+
+      raise PgHaMigrations::UnsafeMigrationError, "#{message} If you really want to do this, use unsafe_change_column."
+    end
+
+    tables = validated_table.partitions(include_sub_partitions: true, include_self: true)
+    quoted_column = connection.quote(column.to_s)
+
+    # Postgres re-validates every CHECK constraint that references the column,
+    # scanning the whole table under the ACCESS EXCLUSIVE lock, even when no
+    # rewrite is needed. Constraints added with NOT VALID are not re-checked.
+    check_constraints = tables.flat_map do |t|
+      connection.select_values(<<~SQL)
+        SELECT pg_constraint.conname
+        FROM pg_constraint
+        JOIN pg_attribute ON pg_attribute.attrelid = pg_constraint.conrelid
+          AND pg_attribute.attnum = ANY (pg_constraint.conkey)
+        WHERE pg_constraint.conrelid = #{connection.quote(t.fully_qualified_name)}::regclass
+          AND pg_constraint.contype = 'c'
+          AND pg_constraint.convalidated
+          AND pg_attribute.attname = #{quoted_column}
+      SQL
+    end.uniq
+
+    if check_constraints.any?
+      raise PgHaMigrations::UnsafeMigrationError, "Changing the type of #{validated_table.inspect}.#{column.to_s.inspect} " \
+        "re-validates CHECK constraint(s) #{check_constraints.join(", ")} with a full table scan while holding an " \
+        "ACCESS EXCLUSIVE lock. Remove the constraint(s) first and re-add them afterwards with " \
+        "safe_add_unvalidated_check_constraint and safe_validate_check_constraint."
+    end
+
+    # Switching between timestamp and timestamptz also makes Postgres
+    # re-validate foreign keys on the column with a full table scan.
+    if current_type.time_zone_change?(new_type)
+      foreign_keys = tables.flat_map do |t|
+        connection.select_values(<<~SQL)
+          SELECT pg_constraint.conname
+          FROM pg_constraint
+          JOIN pg_attribute ON pg_attribute.attrelid = pg_constraint.conrelid
+            AND pg_attribute.attnum = ANY (pg_constraint.conkey)
+          WHERE pg_constraint.conrelid = #{connection.quote(t.fully_qualified_name)}::regclass
+            AND pg_constraint.contype = 'f'
+            AND pg_attribute.attname = #{quoted_column}
+        SQL
+      end.uniq
+
+      if foreign_keys.any?
+        raise PgHaMigrations::UnsafeMigrationError, "Changing #{validated_table.inspect}.#{column.to_s.inspect} from " \
+          "#{current_type} to #{new_type} re-validates foreign key(s) #{foreign_keys.join(", ")} with a full table scan " \
+          "while holding an ACCESS EXCLUSIVE lock."
+      end
+    end
+
+    # Postgres can keep an existing index only when it is a plain index on
+    # the column whose operator class doesn't change. Indexes that use the
+    # column in an expression or predicate are always rebuilt, and switching
+    # between timestamp and timestamptz changes the operator class, so any
+    # index on the column is rebuilt.
+    rebuilt_indexes = tables.flat_map do |t|
+      connection.select_values(<<~SQL)
+        SELECT index_class.relname
+        FROM pg_index
+        JOIN pg_class index_class ON index_class.oid = pg_index.indexrelid
+        JOIN pg_attribute ON pg_attribute.attrelid = pg_index.indrelid
+          AND pg_attribute.attname = #{quoted_column}
+        WHERE pg_index.indrelid = #{connection.quote(t.fully_qualified_name)}::regclass
+          AND EXISTS (
+            SELECT 1
+            FROM pg_depend
+            WHERE pg_depend.classid = 'pg_class'::regclass
+              AND pg_depend.objid = pg_index.indexrelid
+              AND pg_depend.refclassid = 'pg_class'::regclass
+              AND pg_depend.refobjid = pg_index.indrelid
+              AND pg_depend.refobjsubid = pg_attribute.attnum
+          )
+          AND (
+            #{current_type.time_zone_change?(new_type) ? "true" : "false"}
+            OR pg_index.indexprs IS NOT NULL
+            OR pg_index.indpred IS NOT NULL
+          )
+      SQL
+    end.uniq
+
+    if rebuilt_indexes.any?
+      raise PgHaMigrations::UnsafeMigrationError, "Changing #{validated_table.inspect}.#{column.to_s.inspect} from " \
+        "#{current_type} to #{new_type} rebuilds index(es) #{rebuilt_indexes.join(", ")} while holding an " \
+        "ACCESS EXCLUSIVE lock. Remove the index(es) first with safe_remove_concurrent_index and re-create them " \
+        "afterwards with safe_add_concurrent_index."
+    end
+
+    quoted_column_name = connection.quote_column_name(column)
+    sql = "ALTER TABLE #{validated_table.fully_qualified_name} ALTER COLUMN #{quoted_column_name} TYPE #{sql_type}"
+
+    safely_acquire_lock_for_table(table) do
+      say_with_time "change_column(#{table.inspect}, #{column.inspect}, #{type.inspect}#{options.map { |k, v| ", #{k}: #{v.inspect}" }.join})" do
+        # Like ActiveRecord's change_column: prepared statements may depend on the old column type.
+        connection.clear_cache!
+        connection.execute(sql)
+      end
+    end
+  end
+
   def safe_make_column_nullable(table, column)
     quoted_table_name = connection.quote_table_name(table)
     quoted_column_name = connection.quote_column_name(column)
